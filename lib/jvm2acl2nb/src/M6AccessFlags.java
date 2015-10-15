@@ -2,9 +2,11 @@ import com.ibm.toad.cfparse.utils.Access;
 
 class M6AccessFlags {
     
+    int f;
     StringBuffer flags = null;
     
     public M6AccessFlags(int f) {
+        this.f = f;
 	flags=new StringBuffer("(accessflags ");
 	
 	if (Access.isAbstract(f))

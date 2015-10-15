@@ -59,6 +59,29 @@ public class M6Class {
     // don't register other entries, but only the "string" values, we will create
     // those "string" as objects in the heap upon start up of the M6
 
+    static class ClassRef {
+        final String className;
+
+        ClassRef(String className) {
+            this.className = className;
+        }
+
+        @Override
+        public String toString() {
+            return className.toString();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof ClassRef
+                    && className.equals(((ClassRef) o).className);
+        }
+
+        @Override
+        public int hashCode() {
+            return className.hashCode() + 11;
+        }
+    }
 
     /**
      * Given a CFParse ClassFile object, this constructor creates an
@@ -113,7 +136,7 @@ public class M6Class {
      * This method processes the ClassFile given in the constructor.
      * It is necessary to call this method before querying this class.
      */
-    public void processClassFile() throws IOException {
+    public void processClassFile(Target target) throws IOException {
         /* First, the name of the class itself */
 
 	name = cf.getName();
@@ -131,7 +154,7 @@ public class M6Class {
 
 	resolveInterfaces();
 	resolveFields();
-	resolveMethods();
+	resolveMethods(target);
 	resolveAttributes();
 	resolveAccessFlags();
 
@@ -170,7 +193,7 @@ public class M6Class {
 	};
     }
 
-    private void resolveMethods() throws IOException {
+    private void resolveMethods(Target target) throws IOException {
        /* This attribute ensures we have relative tags for
         * branches, rather than byte offsets */
        CodeAttrInfo.setViewer(MutableCodeSegment.getViewer());
@@ -178,7 +201,7 @@ public class M6Class {
        MethodInfoList ml = cf.getMethods();
        for (int i = 0; i < ml.length(); i++) {
 	  M6Method meth = new M6Method(cf, ml.get(i));
-	  meth.processMethod(constant_pool); 
+	  meth.processMethod(constant_pool, target); 
 	  // constant_pool here is used for registering constant symbols.
 	  // when the class is loaded we assume those get into the heap? ;; hanbing
           methods.addElement(meth);
@@ -199,7 +222,14 @@ public class M6Class {
     };
 
 
-    private static String cpToString(int lmargin, Vector cp) {
+    private static String padLeft(String s, int w) {
+        while (s.length() < w) {
+            s = '0' + s;
+        }
+        return s;
+    }
+
+    private static String cpToString(int lmargin, Vector cp, Target target) {
        StringBuffer buf = new StringBuffer();
        StringBuffer padb = new StringBuffer();
 
@@ -214,13 +244,27 @@ public class M6Class {
           if (cp.get(i) instanceof Integer) {
 	     buf.append("(INT " + cp.get(i) + ")");
 	  } else if (cp.get(i) instanceof String) {
-	     buf.append("(STRING  \"" + cp.get(i) + "\")");
+          switch (target) {
+              case M5:
+        	     buf.append("(STRING (REF -1) \"" + cp.get(i) + "\")");
+              case M6:
+        	     buf.append("(STRING  \"" + cp.get(i) + "\")");
+          }
+	  } else if (cp.get(i) instanceof ClassRef) {
+          switch (target) {
+              case M5:
+        	     buf.append("(STRING (REF -1) \"" + ((ClassRef) cp.get(i)).className + "\")");
+              case M6:
+        	     buf.append("(STRING  \"" + ((ClassRef) cp.get(i)).className + "\")");
+          }
 	  } else if (cp.get(i) instanceof Long) {
 	     buf.append("(LONG " + cp.get(i) + ")");
 	  } else if (cp.get(i) instanceof Float) {
-	     buf.append("(FLOAT \"" + cp.get(i) + "\")");
+              float f = (Float) cp.get(i);
+              buf.append("(FLOAT #x" + padLeft(Integer.toHexString(Float.floatToRawIntBits(f)), 8) + ") ; " + Float.toHexString(f) + " " + f);
 	  } else if (cp.get(i) instanceof Double) {
-	     buf.append("(DOUBLE \"" + cp.get(i) + "\")");
+              double d = (Double) cp.get(i);
+              buf.append("(DOUBLE #x" + padLeft(Long.toHexString(Double.doubleToRawLongBits(d)), 16) + ") ; " + Double.toHexString(d) + " " + d);
 	  } else {
 	     buf.append("(UNKNOWN)");
 	  }
@@ -242,7 +286,7 @@ public class M6Class {
      * @return	A String containing the <code>(make-class-decl ...)</code>
      *          that specifies this class in M5.
      */
-    public String toString(int lmargin) {
+    public String toString(int lmargin, Target target) {
        StringBuffer buf = new StringBuffer();
        StringBuffer padb = new StringBuffer();
 
@@ -252,51 +296,92 @@ public class M6Class {
 
        String pad = padb.toString();
 
-       buf.append(pad + "'(class ");
-       buf.append("\""+name + "\"\n");
+        switch (target) {
+            case M5:
+                buf.append(pad + "(make-class-decl\n");
+                buf.append(pad + " \"" + name + "\"\n");
+                buf.append(pad + " '(\"" + super_name + "\")\n");
 
+                buf.append(pad + " '(");
+                for (int j = 0; j < fields.size(); j++) {
+                    M6Field f = (M6Field) fields.get(j);
+                    if (Access.isStatic(f.getAccessFlags().f)) {
+                        continue;
+                    }
+                    buf.append("\n" + f.toString(lmargin + 20, target));
+                }
+                buf.append(")\n");
+
+                buf.append(pad + " '(");
+                for (int j = 0; j < fields.size(); j++) {
+                    M6Field f = (M6Field) fields.get(j);
+                    if (!Access.isStatic(f.getAccessFlags().f)) {
+                        continue;
+                    }
+                    buf.append("\n" + f.toString(lmargin + 20, target));
+                }
+                buf.append(")\n");
+
+                buf.append(pad + " '(");
+                if (constant_pool.size() > 0) {
+                    buf.append("\n" + cpToString(lmargin + 20, constant_pool, target));
+                }
+                buf.append("\n" + pad + " )\n");
+
+                buf.append(pad + " (list");
+                for (int j = 0; j < methods.size(); j++) {
+                    M6Method m = (M6Method) methods.get(j);
+                    buf.append("\n" + m.toString(lmargin + 2, target));
+                }
+                buf.append(")\n");
+                buf.append(pad + " '(REF -1))");
+                break;
+            case M6:
+                buf.append(pad + "'(class ");
+                buf.append("\"" + name + "\"\n");
        //   buf.append(pad + "        ");
-       //   buf.append(booleanToACL2String(is_interface)+"\n");
-	   
-       buf.append(pad + "        \"" + super_name+"\"\n");
+                //   buf.append(booleanToACL2String(is_interface)+"\n");
+                buf.append(pad + "        \"" + super_name + "\"\n");
 
-       buf.append(pad + "        " + "(constant_pool");
-       if (constant_pool.size()>0) 
-	   buf.append("\n" + cpToString(lmargin + 20, constant_pool));
-       buf.append(")\n");
+                buf.append(pad + "        " + "(constant_pool");
+                if (constant_pool.size() > 0) {
+                    buf.append("\n" + cpToString(lmargin + 20, constant_pool, target));
+                }
+                buf.append(")\n");
 
-       buf.append(pad + "        " + "(fields");
-       for (int j= 0 ; j < fields.size(); j++) {
-	   M6Field f = (M6Field) fields.get(j);
-	   buf.append("\n"+f.toString(lmargin+20));
-       };
-       buf.append(")\n");
+                buf.append(pad + "        " + "(fields");
+                for (int j = 0; j < fields.size(); j++) {
+                    M6Field f = (M6Field) fields.get(j);
+                    buf.append("\n" + f.toString(lmargin + 20, target));
+                }
+                ;
+                buf.append(")\n");
 
-       buf.append(pad + "        " + "(methods");
-       for (int j = 0; j < methods.size(); j++) {
-	  M6Method m = (M6Method) methods.get(j);
-          buf.append("\n"+m.toString(lmargin + 20));
-       }
-       buf.append(")\n");
+                buf.append(pad + "        " + "(methods");
+                for (int j = 0; j < methods.size(); j++) {
+                    M6Method m = (M6Method) methods.get(j);
+                    buf.append("\n" + m.toString(lmargin + 20, target));
+                }
+                buf.append(")\n");
 
+                buf.append(pad + "        " + "(interfaces");
+                for (int i = 0; i < interfaces.size(); i++) {
+                    buf.append(" \"" + interfaces.get(i) + "\"");
+                }
+                ;
+                buf.append(")\n");
+                buf.append(accessflags.toString(lmargin + 8) + "\n");
 
-       buf.append(pad + "        " + "(interfaces");
-       for (int i=0; i<interfaces.size(); i++) {
-	   buf.append(" \""+interfaces.get(i)+"\"");
-       };
-       buf.append(")\n");
+                buf.append(pad + "        " + "(attributes");
 
+                for (int i = 0; i < attributes.size(); i++) {
+                    buf.append("\n" + pad + "          "
+                            + "(attribute \"" + ((AttrInfo) attributes.get(i)).getName() + "\")");
+                }
+                buf.append("))");
 
-       buf.append(accessflags.toString(lmargin+8)+"\n");
-       
-
-       buf.append(pad + "        " + "(attributes");
-
-       for (int i=0; i<attributes.size(); i++) {
-         buf.append("\n"+pad+"          " 
-         	  + "(attribute \""+((AttrInfo)attributes.get(i)).getName()+"\")");
-       }
-       buf.append("))");
+                break;
+        }
 
        return buf.toString();
     }

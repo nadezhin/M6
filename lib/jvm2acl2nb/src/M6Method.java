@@ -9,7 +9,6 @@ import com.ibm.toad.cfparse.utils.*;
 import com.ibm.toad.cfparse.instruction.*;
 import com.ibm.toad.cfparse.attributes.*;
 
-import java.lang.*;
 import java.util.*;
 import java.io.*;
 
@@ -253,106 +252,138 @@ public class M6Method {
     * 
     * @param lmargin	The number of spaces of indentation to place before
     *                   the output
+    * @param target     Target JVM model
     * @return	A pretty-printed String representing this method.
     */
-   public String toString(int lmargin) {
-      if (!processed) {
-         return "You must call processMethod first!";
-      } 
+    public String toString(int lmargin, Target target) {
+        if (!processed) {
+            return "You must call processMethod first!";
+        }
 
-      StringBuffer buf  = new StringBuffer();
-      StringBuffer padb = new StringBuffer();
+        StringBuffer buf = new StringBuffer();
+        StringBuffer padb = new StringBuffer();
 
-      for (int i = 0; i < lmargin; i++) {
-         padb.append(" ");
-      }
+        for (int i = 0; i < lmargin; i++) {
+            padb.append(" ");
+        }
 
-      String pad = padb.toString();
+        String pad = padb.toString();
 
-      buf.append(pad + "(method \"" + name + "\"\n");
+        switch (target) {
+            case M5:
+                buf.append(pad + "'(\"" + name + "\" (");
+                break;
+            case M6:
+                buf.append(pad + "(method \"" + name + "\"\n");
+                buf.append(pad + "      (parameters ");
+                break;
+        }
+        for (int i = 0; i < params.size(); i++) {
+            buf.append(params.get(i));
 
-      buf.append(pad + "      (parameters ");
-      for (int i = 0; i < params.size(); i++) {
-         buf.append(params.get(i));
+            if (i < (params.size() - 1)) {
+                buf.append(" ");
+            }
+        }
+        switch (target) {
+            case M5:
+                buf.append(") ");
+                buf.append((Access.isSynchronized(m.getAccess()) ? "t" : "nil") + "\n");
+                break;
+            case M6:
+                buf.append(")\n");
+                buf.append(pad + "      (returntype . " + returntype + ")\n");
 
-	 if (i < (params.size() - 1)) {
-	    buf.append(" ");
-	 }
-      }
-      buf.append(")\n");
-      buf.append(pad + "      (returntype . " +  returntype +")\n");
-      
-      buf.append(accessflags.toString(lmargin+6)+"\n");
+                buf.append(accessflags.toString(lmargin + 6) + "\n");
+                break;
+        }
 
-      //      buf.append(pad + "(accessflags ");
-      //      for (int i=0; i< accessflags.size() ; i++) {
-      //         buf.append((String)accessflags.get(i));
-      //        if (i<accessflags.size()-1) 
-      //          buf.append(" ");
-      // };
-      // buf.append(")\n");
-
-
-      buf.append(pad +        "      (code");
-      if (instructions==null) {
-	  buf.append(")");
-      } else {
-      buf.append("\n"+pad + "           (max_stack . " + max_stack  +")" 
-		     + " (max_locals . " + max_locals +")"
-		     + " (code_length . " + code_length +")\n");
-      buf.append(pad + "           (parsedcode\n");
+        switch (target) {
+            case M5:
+                break;
+            case M6:
+                buf.append(pad + "      (code");
+                if (instructions != null) {
+                    buf.append("\n" + pad + "           (max_stack . " + max_stack + ")"
+                            + " (max_locals . " + max_locals + ")"
+                            + " (code_length . " + code_length + ")\n");
+                    buf.append(pad + "           (parsedcode\n");
+                }
+                break;
+        }
    
-      for (int i = 0; i < m6instructions.size(); i++) {
-	  StringBuffer line = new StringBuffer(pad + "              " + m6instructions.get(i));
-       
-       
- 
-       // round the line length to multiple of 20.
-       /*
-       if (i<m6instructions.size()-1) {
-	   int bc = 20 - (line.length()) % 20;
-	   for (int j=0; j<bc; j++) 
-	       line.append(" ");
-       };   
-	 
-       if (i == (m6instructions.size() - 1)) {
-	    line.append(")");
-	    int bc = 20 - (line.length()) % 20;
-	    for (int j=0; j<bc; j++) 
-		line.append(" ");
-	    line.append(";; "+i);  
-	 } else {
-	    line.append(";; "+i);  
-	    line.append("\n");
-	    }
-       */ 
-       buf.append(line);
-       if (i<m6instructions.size()-1) 
-	   buf.append("\n");
-      }
+        for (int i = 0; i < m6instructions.size(); i++) {
+            StringBuffer line = new StringBuffer(pad);
+            switch (target) {
+                case M5:
+                    line.append("  ");
+                    break;
+                case M6:
+                    line.append("              ");
+                    break;
+            }
+            line.append(m6instructions.get(i));
 
-      buf.append(")");
+            // round the line length to multiple of 20.
+            /*
+            if (i < m6instructions.size() - 1) {
+                int bc = 20 - (line.length()) % 20;
+                for (int j = 0; j < bc; j++) {
+                    line.append(" ");
+                }
+            };
 
+            if (i == (m6instructions.size() - 1)) {
+                line.append(")");
+                int bc = 20 - (line.length()) % 20;
+                for (int j = 0; j < bc; j++) {
+                    line.append(" ");
+                }
+                line.append(";; " + i);
+            } else {
+                line.append(";; " + i);
+                line.append("\n");
+            }
+            */
+            buf.append(line);
+            switch (target) {
+                case M5:
+                    buf.append("\n");
+                    break;
+                case M6:
+                    if (i < m6instructions.size() - 1) {
+                        buf.append("\n");
+                    }
+                    break;
+            }
+        }
+        switch (target) {
+            case M5:
+                buf.append(pad + " )");
+                break;
+            case M6:
+                buf.append(")");
+                if (instructions != null) {
+                    buf.append("\n" + pad + "           (Exceptions ");
+                    if (handlers != null) {
+                        for (int i = 0; i < handlers.length; i++) {
+                            buf.append("\n" + pad + "             " + handlers[i].toString());
+                        };
+                    };
+                    buf.append(")\n");
 
-
-      buf.append("\n"+pad + "           (Exceptions ");
-     if (handlers!=null) {
-	 for (int i=0; i< handlers.length; i++) {
-	     buf.append("\n"+pad + "             " + handlers[i].toString());
-	 };
-     };
-
-     buf.append(")\n");
-
-     if (stackmaps!=null) 
-	 buf.append(stackmaps.toString(lmargin + 12));
-     else 
-	 buf.append(pad+"           (StackMap )");
-     buf.append(")");
-    };          
-      buf.append(")"); 
-     return buf.toString();
-   }
+                    if (stackmaps != null) {
+                        buf.append(stackmaps.toString(lmargin + 12));
+                    } else {
+                        buf.append(pad + "           (StackMap )");
+                    }
+                    buf.append(")");
+                }
+                buf.append(")"); 
+                break;
+        }
+        return buf.toString();
+    }
 
 
     public static void setAbstractMode() {
@@ -371,8 +402,9 @@ public class M6Method {
     * @param constant_pool	The constant pool element from the M6Class
     *                           object representing the outer class from
     *                           which this method is taken from.
+    * @param target     Target JVM model
     */
-   public void processMethod(Vector constant_pool) throws IOException {
+   public void processMethod(Vector constant_pool, Target target) throws IOException {
 
       /* The name of the method */
       name = m.getName();
@@ -436,6 +468,15 @@ public class M6Method {
       CodeAttrInfo cai = (CodeAttrInfo) al.get("Code");
       if (cai==null || no_method_body) { 
 	  instructions = null;
+          switch (target) {
+              case M5:
+                  if (Access.isNative(m.getAccess())) {
+                      m6instructions.addElement("NIL ; native method");
+                  }
+                  break;
+              case M6:
+                  break;
+          }
       } else {
 	  MutableCodeSegment mc = new MutableCodeSegment(cf.getCP(), cai, true);
 	  mc.setInstructionFactory(new StringInstructionFactory());
@@ -455,8 +496,12 @@ public class M6Method {
 	  while(mci.hasNext()) {
 	      BaseInstruction inst = (BaseInstruction) mci.next();
 	      //     System.out.println("\n"+idx+inst.toString());
+          if (inst.toString().startsWith("line_number")) {
+              m6instructions.addElement("; " + inst.toString().trim());
+              continue;
+          }
 
-	      String resultStr = parseInst(inst, cf, constant_pool, offset);
+	      String resultStr = parseInst(inst, cf, constant_pool, offset, target);
 	      if (resultStr != null) {
 		  m6instructions.addElement(resultStr);
 		  offset = offset + inst.getLength(offset);
@@ -480,7 +525,13 @@ public class M6Method {
 	  code_length = cai.getCode().length; // in bytes -- feb 17 
       
 	  // add an end marker to the code.
-	  m6instructions.addElement("(endofcode "+code_length+")");
+      switch (target) {
+          case M5:
+              break;
+          case M6:
+        	  m6instructions.addElement("(endofcode "+code_length+")");
+              break;
+      }
 	  
 	  // get handlers correctly.
 	  CodeAttrInfo.ExceptionInfo[] exceptions = cai.getExceptions();
@@ -551,28 +602,35 @@ public class M6Method {
 	return "(fieldCP \""+n+"\" \""+ cn + "\" " + makeClassCP(rt)+")";
     };
 
-    private static String makeMethodCP(String n, String cn, Vector params, String rt)
+    private static String makeMethodCP(String n, String cn, Vector params, String rt, Target target)
     {
-	StringBuffer buf = new StringBuffer();
-	buf.append("(methodCP \"" + n + "\" \"" + cn + "\" (");
-	
-	for (int i=0; i<params.size(); i++) {
-	    buf.append(makeClassCP((String)params.get(i)));
-	    if (i<params.size()-1) 
-		buf.append(" ");
-	};
-	buf.append(") ");
+        StringBuffer buf = new StringBuffer();
+        switch (target) {
+            case M5:
+            	buf.append("\"" + cn + "\" \"" + n + "\" " + params.size());
+                break;
+            case M6:
+                buf.append("(methodCP \"" + n + "\" \"" + cn + "\" (");
 
-	buf.append(makeClassCP(rt));
-	
-	return buf.toString();
+                for (int i = 0; i < params.size(); i++) {
+                    buf.append(makeClassCP((String) params.get(i)));
+                    if (i < params.size() - 1) {
+                        buf.append(" ");
+                    }
+                }
+                buf.append(") ");
+                buf.append(makeClassCP(rt));
+                break;
+        }
+        return buf.toString();
     };
 
 
    private String parseInst(BaseInstruction inst,
                                    ClassFile cf,
 				   Vector constant_pool,
-				   int offset) 
+				   int offset,
+                   Target targetModel) 
     {
       StringBuffer tmp = new StringBuffer();
       StringBuffer tmp2 = new StringBuffer();
@@ -583,12 +641,18 @@ public class M6Method {
 
       System.out.println(inst.toString());
 
-      tmp.append("(" + offset + " (");
+        switch (targetModel) {
+            case M5:
+                break;
+            case M6:
+                tmp.append("(" + offset + " (");
 
-      if (inst.getTag() != null) {
-	  tagTable.put(inst.getTag(), new Integer(offset));
-	  tmp2.append(";;at " + inst.getTag());
-      };
+                if (inst.getTag() != null) {
+                    tagTable.put(inst.getTag(), new Integer(offset));
+                    tmp2.append(";;at " + inst.getTag());
+                }
+                break;
+        }
 
 
       /*	 
@@ -601,7 +665,14 @@ public class M6Method {
 
       if (inst.getLength(offset) == 1) {
 	 tmp.append(inst.toString().trim());
-	 tmp.append("))");  // here we handled aload_x etc.  
+          switch (targetModel) {
+              case M5:
+                  tmp.append(")");
+                  break;
+              case M6:
+                  tmp.append("))");  // here we handled aload_x etc.  
+                  break;
+          }
       } else { 
 
       switch (inst.getOpCode()) {
@@ -679,7 +750,13 @@ public class M6Method {
 	 case JVMConstants.JSR_W:
 
 	    buf.append(inst.toString().trim());
-	    //  buf.insert(buf.toString().indexOf(" ") + 1, "LABEL::");
+         switch (targetModel) {
+             case M5:
+                 buf.insert(buf.toString().indexOf(" ") + 1, "LABEL::");
+                 break;
+             case M6:
+                 break;
+         }
 	    tmp.append(buf.toString()); 
 	    // leave the tag in the buf. 
 	    break;
@@ -742,7 +819,13 @@ public class M6Method {
 		   params.addElement(tok.nextToken(",").trim());
 	       };
 	    }
-	    tmp.append("\n\t\t\t\t\t" + makeMethodCP(MethodName, MethodClassName, params, MethodReturnType)+")");
+        switch (targetModel) {
+            case M5:
+                break;
+            case M6:
+        	    tmp.append("\n\t\t\t\t\t" + makeMethodCP(MethodName, MethodClassName, params, MethodReturnType, targetModel)+")");
+                break;
+        }
 	    break;
 
 	 /* ldc "Hello, World!"
@@ -829,6 +912,19 @@ public class M6Method {
 	       };
 
        	       tmp2.append(";;Long:: \"" + val+"\"");
+
+	    } else if (entType == ConstantPool.CONSTANT_Class) {
+            ClassEntry cl_ent = (ClassEntry) ent;
+            M6Class.ClassRef val = new M6Class.ClassRef(cl_ent.getAsJava());
+
+            if (constant_pool.contains(val)) {
+		  tmp.append(constant_pool.indexOf(val));
+	       } else {
+		  constant_pool.addElement(val);
+		  tmp.append(constant_pool.size() - 1);  // zero-based indices
+	       };
+
+          tmp2.append(";;CLASS:: \"" + val+"\"");
 
 	    } else {
 
@@ -936,7 +1032,7 @@ public class M6Method {
 	    String tc = tok.nextToken(" ");
 
 	    tmp.append("\n\t\t\t\t\t" 
-		       + makeMethodCP(iMethodName, iMethodClassName, iparams, iMethodReturnType)
+		       + makeMethodCP(iMethodName, iMethodClassName, iparams, iMethodReturnType, targetModel)
 		       + ") " + tc.substring(1));
 	  }
 
@@ -1046,7 +1142,14 @@ public class M6Method {
       }
 
 
-      tmp.append("))");
+      switch (targetModel) {
+          case M5:
+              tmp.append(")");
+              break;
+          case M6:
+              tmp.append("))");
+              break;
+      }
       };
        // round the line length to multiple of 20.
       if (!tmp2.equals("")) {

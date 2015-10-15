@@ -31,6 +31,7 @@ public class jvm2acl2x {
 	    System.out.println(args[i]);
 	    if (cur.isDirectory()) {
 		String[] nextlevel=cur.list(); 
+        Arrays.sort(nextlevel);
 		for (int j=0; j<nextlevel.length; j++) {
 		    nextlevel[j]=(cur.getPath()+"/"+nextlevel[j]);
 		};
@@ -131,7 +132,7 @@ public class jvm2acl2x {
 	try {
 	 ClassFile cfs = (ClassFile) new ClassFile(classfn);
 	 M6Class   curClass = new M6Class(cfs);
-         curClass.processClassFile();
+         curClass.processClassFile(Target.M6);
 
 	 StringBuffer ctBuf = new StringBuffer();
 	 String classname = cfs.getName();
@@ -142,7 +143,7 @@ public class jvm2acl2x {
 	 ctBuf.append("(defconst *" + classname + "*\n");
 	 ctBuf.append(" (make-class-def\n");
 	 ctBuf.append("  ");
-	 ctBuf.append(curClass.toString(4));
+	 ctBuf.append(curClass.toString(4, Target.M6));
 	 ctBuf.append("))\n\n");
 	 
 	 writeToFile(pathn+"/*"+classname+"*.lisp", ctBuf);
@@ -234,7 +235,7 @@ public class jvm2acl2x {
 
 	  Calendar rightNow = Calendar.getInstance();
 
-	  outfile.write("on " + rightNow.getTime().toString() + ".\n;\n\n");
+	  outfile.write(/*"on " + rightNow.getTime().toString() +*/ ".\n;\n\n");
 
 	  outfile.write(ctBuf.toString() + "\n");
 	  outfile.write("\n");

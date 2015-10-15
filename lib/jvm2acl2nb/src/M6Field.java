@@ -83,16 +83,34 @@ public class M6Field {
 
 	field = null; // to release some memory..
     };
-	
-    public String toString(int lmargin) {
+
+    public M6AccessFlags getAccessFlags() {
+        return accessflags;
+    }
+    
+   /**
+    * returns a pretty-printed String representing this field.
+    * 
+    * @param lmargin	The number of spaces of indentation to place before
+    *                   the output
+    * @param target     Target JVM model
+    * @return	A pretty-printed String representing this field.
+    */
+    public String toString(int lmargin, Target target) {
       StringBuffer padb = new StringBuffer();
 
       for (int i = 0; i < lmargin; i++) {
          padb.append(" ");
       };
       
-
-      padb.append("(field \"" + name + "\" "+ type +" "+accessflags.toString(0)+" " + index+")");
+      switch (target) {
+          case M5:
+              padb.append("\"" + name + "\"");
+              break;
+          case M6:
+              padb.append("(field \"" + name + "\" "+ type +" "+accessflags.toString(0)+" " + index+")");
+              break;
+      }
 
       return padb.toString();
 
