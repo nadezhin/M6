@@ -510,7 +510,13 @@ public class M6Method {
 	  }
 
 
-	  resolveTagInCode(); 
+      switch (target) {
+          case M5:
+              break;
+          case M6:
+        	  resolveTagInCode();
+              break;
+      }
 	  // resolve any tag to absolute offsets.
 
 	  // get the max_stack, in # slot
@@ -643,6 +649,13 @@ public class M6Method {
 
         switch (targetModel) {
             case M5:
+                tmp.append("(");
+
+                if (inst.getTag() != null) {
+                    tmp.append("LABEL::").append(inst.getTag()).append(" ");
+                    tagTable.put(inst.getTag(), new Integer(offset));
+                    tmp2.append(";;at " + inst.getTag());
+                }
                 break;
             case M6:
                 tmp.append("(" + offset + " (");
@@ -821,6 +834,7 @@ public class M6Method {
 	    }
         switch (targetModel) {
             case M5:
+	            tmp.append(" " + makeMethodCP(MethodName, MethodClassName, params, MethodReturnType, targetModel));
                 break;
             case M6:
         	    tmp.append("\n\t\t\t\t\t" + makeMethodCP(MethodName, MethodClassName, params, MethodReturnType, targetModel)+")");

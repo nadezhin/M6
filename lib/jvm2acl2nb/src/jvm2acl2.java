@@ -50,7 +50,7 @@ public class jvm2acl2 {
       for (int i=0; i< args.length-1; i++)
 	  input[i]=args[i+1];
 
-      processFiles(args[0], collectFileNames(input), Target.M6);
+      processFiles(args[0], collectFileNames(input), Target.M5);
    };
 
    private static void processFiles(String tablename, String[] args, Target target) {  
@@ -64,7 +64,7 @@ public class jvm2acl2 {
 	    classes[i] = new M6Class(cfs[i]);
 	    classes[i].processClassFile(target);
 	 } catch (java.lang.Exception e) {
-	    System.err.println("Could not open file " + args[0] + " "+e);
+	    System.err.println("Could not open file " + args[i] + " "+e);
 	    System.exit(0);
 	 }
       }

@@ -247,15 +247,19 @@ public class M6Class {
           switch (target) {
               case M5:
         	     buf.append("(STRING (REF -1) \"" + cp.get(i) + "\")");
+                 break;
               case M6:
         	     buf.append("(STRING  \"" + cp.get(i) + "\")");
+                 break;
           }
 	  } else if (cp.get(i) instanceof ClassRef) {
           switch (target) {
               case M5:
-        	     buf.append("(STRING (REF -1) \"" + ((ClassRef) cp.get(i)).className + "\")");
+        	     buf.append("(CLASS (REF -1) \"" + ((ClassRef) cp.get(i)).className + "\")");
+                 break;
               case M6:
-        	     buf.append("(STRING  \"" + ((ClassRef) cp.get(i)).className + "\")");
+        	     buf.append("(CLASS  \"" + ((ClassRef) cp.get(i)).className + "\")");
+                 break;
           }
 	  } else if (cp.get(i) instanceof Long) {
 	     buf.append("(LONG " + cp.get(i) + ")");
