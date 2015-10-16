@@ -1,7 +1,9 @@
+
 /**
  * Target JVM model
  */
 public enum Target {
-   M5,
-   M6;
+
+    M5,
+    M6;
 }

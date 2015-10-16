@@ -35,11 +35,11 @@ public class jvm2acl2x {
                     Arrays.sort(nextlevel);
                     for (int j = 0; j < nextlevel.length; j++) {
                         nextlevel[j] = (cur.getPath() + "/" + nextlevel[j]);
-                    };
+                    }
                     String[] names = collectFileNames(nextlevel);
                     for (int j = 0; j < names.length; j++) {
                         files.addElement(names[j]);
-                    };
+                    }
                 } else {
                     String curn = cur.getPath();
                     int e = curn.lastIndexOf('.');
@@ -48,24 +48,22 @@ public class jvm2acl2x {
                         if (suffix.equals("class")) {
                             files.addElement(curn);
                         }
-                    };
-                };
-            };
+                    }
+                }
+            }
 
             reslt = new String[files.size()];
             for (int i = 0; i < files.size(); i++) {
                 reslt[i] = (String) files.get(i);
                 System.out.println(reslt[i]);
-            };
+            }
         } catch (Exception e) {
             System.out.println("File reading error!");
-        };
+        }
         return reslt;
     }
 
-    ;
-
-   public static void main(String[] args) {
+    public static void main(String[] args) {
 
         int start = 0;
         String output;
@@ -75,7 +73,7 @@ public class jvm2acl2x {
         if (args.length <= 1) {
             System.err.println(usage);
             System.exit(0);
-        };
+        }
 
         start = 0;
 
@@ -86,8 +84,8 @@ public class jvm2acl2x {
             if (args.length - start < 2) {
                 System.err.println(usage);
                 System.exit(0);
-            };
-        };
+            }
+        }
 
         if (args[start].equals("-g")) {
             keep_lntlvt = true;
@@ -98,23 +96,22 @@ public class jvm2acl2x {
             if (args.length - start < 2) {
                 System.err.println(usage);
                 System.exit(0);
-            };
-        };
+            }
+        }
 
         if (args[start].equals("-d")) {
             start++;
             if (args.length - start < 3) {
                 System.err.println(usage);
                 System.exit(0);
-            };
+            }
             defaultpath = args[start];
             start++;
 
             if (defaultpath.charAt(defaultpath.length() - 1) != '/') {
                 defaultpath = defaultpath + "/";
             }
-
-        };
+        }
 
         output = args[start];
 
@@ -123,14 +120,11 @@ public class jvm2acl2x {
             input[i - start] = args[i + 1];
         }
 
-       // String[] input = new String[1];
+        // String[] input = new String[1];
         // input[0]="Demo.class";
         processFiles(output, collectFileNames(input));
         //  processFiles(output, input);
-
     }
-
-    ;
 
     private static String processOneFile(String classfn, String pathn, StringBuffer table, Target target) {
         try {
@@ -168,15 +162,12 @@ public class jvm2acl2x {
             if (keep_lntlvt) {
                 writeToFile(pathn + "/*" + classname + "*.lnt.lisp", curClass.getlntdesc());
                 writeToFile(pathn + "/*" + classname + "*.lvt.lisp", curClass.getlvtdesc());
-            };
-
+            }
             return classname;
-
         } catch (Exception e) {
             System.err.println(e);
             System.exit(-1);
-        };
-
+        }
         return null;
     }
 
@@ -192,10 +183,9 @@ public class jvm2acl2x {
         } else {
             tablename = tname;
             tablepath = tname;
-        };
+        }
 
         ctBuf.append(";; load all class description as Lisp constants\n");
-
         if (abstract_mode) {
             ctBuf2.append("(defconst *" + tablename + "-class-table-abs*\n");
         } else {
@@ -241,10 +231,7 @@ public class jvm2acl2x {
         } else {
             writeToFile(tablepath + '/' + tablename + "-class-table.lisp", ctBuf);
         }
-
     }
-
-    ;
 
     private static void writeToFile(String fn, StringBuffer ctBuf) {
         System.out.println("Writing state to file " + defaultpath + fn);
@@ -264,7 +251,6 @@ public class jvm2acl2x {
             outfile.close();
 
             System.out.println("done!");
-
         } catch (IOException e) {
             System.out.println("\nError writing to " + fn);
             System.exit(1);
