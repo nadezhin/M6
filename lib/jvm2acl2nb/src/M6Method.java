@@ -32,10 +32,13 @@ import java.io.*;
  */
 public class M6Method {
 
+    private static final boolean NAME_AND_TYPE = true;
+
     private MethodInfo m;
     private ClassFile cf;
 
     private String name;
+    private String desc;
     private Vector params;
     private String returntype;
     private boolean synced;
@@ -250,7 +253,16 @@ public class M6Method {
         String pad = padb.toString();
         switch (target) {
             case M5:
-                buf.append(pad + "'(\"" + name + "\" (");
+                if (NAME_AND_TYPE) {
+                    buf
+                            .append(pad)
+                            .append("'(\"")
+                            .append(name)
+                            .append(desc)
+                            .append("\" (");
+                } else {
+                    buf.append(pad + "'(\"" + name + "\" (");
+                }
                 break;
             case M6:
                 buf.append(pad + "(method \"" + name + "\"\n");
@@ -388,6 +400,7 @@ public class M6Method {
         }
 
         /* We parse in the parameters into a Vector insert "top" if necessary. if necessary. */
+        desc = m.getDesc();
         String[] ps = m.getParams();
         for (int i = 0; i < ps.length; i++) {
             String curtype = ps[i];
@@ -784,6 +797,13 @@ public class M6Method {
                     String Method = tok.nextToken("(");
                     String MethodClassName = Method.substring(0, Method.lastIndexOf(".")).trim();
                     String MethodName = Method.substring(Method.lastIndexOf(".") + 1).trim();
+                    if (targetModel == Target.M5 && NAME_AND_TYPE) {
+                        byte[] instCode = inst.getCode(null, 0);
+                        assert instCode.length == 3;
+                        int methRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
+                        String methRef = cf.getCP().getAsString(methRefOffs);
+                        MethodName += methRef.substring(methRef.indexOf('('));
+                    }
                     Vector params = new Vector();
                     String rawparams = tok.nextToken("");
 
@@ -966,7 +986,13 @@ public class M6Method {
                     String iMethod = tok.nextToken("(");
                     String iMethodClassName = iMethod.substring(0, iMethod.lastIndexOf(".")).trim();
                     String iMethodName = iMethod.substring(iMethod.lastIndexOf(".") + 1).trim();
-
+                    if (targetModel == Target.M5 && NAME_AND_TYPE) {
+                        byte[] iinstCode = inst.getCode(null, 0);
+                        assert iinstCode.length == 5;
+                        int imethRefOffs = ((iinstCode[1] & 0xFF) << 8) | (iinstCode[2] & 0xFF);
+                        String imethRef = cf.getCP().getAsString(imethRefOffs);
+                        iMethodName += imethRef.substring(imethRef.indexOf('('));
+                    }
                     Vector iparams = new Vector();
                     String irawparams = tok.nextToken(")");
                     /* trim off the outer parens */
