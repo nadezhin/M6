@@ -688,7 +688,26 @@ public class M6Method {
           }
       } else { 
 
-      switch (inst.getOpCode()) {
+          int opCode = inst.getOpCode();
+      boolean isWide = opCode == JVMConstants.WIDE;
+      if (isWide) {
+          opCode = inst.getCode(null, 0)[1] & 0xFF;
+          if (opCode != JVMConstants.IINC
+                  && opCode != JVMConstants.ALOAD
+                  && opCode != JVMConstants.ASTORE
+                  && opCode != JVMConstants.DLOAD
+                  && opCode != JVMConstants.DSTORE
+                  && opCode != JVMConstants.FLOAD
+                  && opCode != JVMConstants.FSTORE
+                  && opCode != JVMConstants.ILOAD
+                  && opCode != JVMConstants.ISTORE
+                  && opCode != JVMConstants.LLOAD
+                  && opCode != JVMConstants.LSTORE
+                  && opCode != JVMConstants.RET) {
+              opCode = JVMConstants.WIDE;
+          }
+      }
+      switch (opCode) {
 
 	 /* aload v5
 	  * (JVM::aload 4) */
@@ -706,7 +725,7 @@ public class M6Method {
 	 case JVMConstants.RET:
 	 case JVMConstants.SIPUSH:
 
-	    buf.append(inst.toString().trim());
+	    buf.append(inst.toString().replace("wide ", "").trim());
 	    buf.deleteCharAt(inst.toString().trim().indexOf(" ") + 1);
 	    tmp.append(buf);
 	    break;
@@ -786,7 +805,7 @@ public class M6Method {
 	  * (JVM::iinc 4 1) */
          case JVMConstants.IINC:
 
-	    buf.append(inst.toString().trim());
+	    buf.append(inst.toString().replace("wide ", "").trim());
 	    buf.deleteCharAt(inst.toString().trim().indexOf(" ") + 1);
 	    buf.deleteCharAt(buf.toString().lastIndexOf(" ") + 1);
 	    tmp.append(buf);
@@ -850,7 +869,7 @@ public class M6Method {
          case JVMConstants.LDC_W:
 
 	     
- 	     if (inst.getOpCode()==JVMConstants.LDC) {
+ 	     if (opCode==JVMConstants.LDC) {
 		tmp.append("ldc ");	     
 		byte cpidx1 = inst.getCode(null, 1)[1];
 		int cpidx = (int) cpidx1&255;
@@ -1045,9 +1064,16 @@ public class M6Method {
 	    tok.nextToken("#"); // skip
 	    String tc = tok.nextToken(" ");
 
-	    tmp.append("\n\t\t\t\t\t" 
-		       + makeMethodCP(iMethodName, iMethodClassName, iparams, iMethodReturnType, targetModel)
-		       + ") " + tc.substring(1));
+          switch (targetModel) {
+              case M5:
+                  tmp.append(" " + makeMethodCP(iMethodName, iMethodClassName, iparams, iMethodReturnType, targetModel) + " " + tc.substring(1));
+                  break;
+              case M6:
+                  tmp.append("\n\t\t\t\t\t"
+                          + makeMethodCP(iMethodName, iMethodClassName, iparams, iMethodReturnType, targetModel)
+                          + ") " + tc.substring(1));
+                  break;
+          }
 	  }
 
 	    break;
