@@ -6,6 +6,7 @@ import java.util.Vector;
 public class M6Field {
 
     private String name;
+    private String desc;
     private String type;
     private M6AccessFlags accessflags;
     private FieldInfo field;
@@ -14,6 +15,7 @@ public class M6Field {
     public M6Field(ClassFile cp, FieldInfo f) {
         field = f;
         name = f.getName();
+        desc = f.getDesc();
         type = ACL2utils.JavaTypeStrToACL2TypeStr(f.getType());
         accessflags = new M6AccessFlags(f.getAccess());
         index = -1;
@@ -105,7 +107,11 @@ public class M6Field {
         }
         switch (target) {
             case M5:
-                padb.append("\"" + name + "\"");
+                if (ACL2utils.NAME_AND_TYPE) {
+                    padb.append("\"" + name + ":" + desc + "\"");
+                } else {
+                    padb.append("\"" + name + "\"");
+                }
                 break;
             case M6:
                 padb.append("(field \"" + name + "\" " + type + " " + accessflags.toString(0) + " " + index + ")");

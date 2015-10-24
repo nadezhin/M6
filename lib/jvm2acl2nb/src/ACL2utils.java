@@ -3,6 +3,8 @@ import java.util.Vector;
 
 public class ACL2utils {
 
+    public static final boolean NAME_AND_TYPE = true;
+
     public static String JavaTypeStrToACL2TypeStr(String jtype) {
         //jst do simple changes
         // 1. enclose class name with " ", change into (class "<classname>") form

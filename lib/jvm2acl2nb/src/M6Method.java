@@ -32,8 +32,6 @@ import java.io.*;
  */
 public class M6Method {
 
-    private static final boolean NAME_AND_TYPE = true;
-
     private MethodInfo m;
     private ClassFile cf;
 
@@ -253,11 +251,12 @@ public class M6Method {
         String pad = padb.toString();
         switch (target) {
             case M5:
-                if (NAME_AND_TYPE) {
+                if (ACL2utils.NAME_AND_TYPE) {
                     buf
                             .append(pad)
                             .append("'(\"")
                             .append(name)
+                            .append(":")
                             .append(desc)
                             .append("\" (");
                 } else {
@@ -573,12 +572,28 @@ public class M6Method {
         return AttrUtils.getAttrByName(al, "StackMap");
     }
 
-    private static String makeClassCP(String jtype) {
-        return ACL2utils.JavaTypeStrToACL2TypeStr(jtype);
+    private static String makeClassCP(String jtype, Target target) {
+        switch (target) {
+            case M5:
+                return "\"" + jtype + "\"";
+            case M6:
+                return ACL2utils.JavaTypeStrToACL2TypeStr(jtype);
+        }
+        throw new AssertionError();
     }
 
-    private static String makeFieldCP(String n, String cn, String rt) {
-        return "(fieldCP \"" + n + "\" \"" + cn + "\" " + makeClassCP(rt) + ")";
+    private static String makeFieldCP(String n, String cn, String rt, Target target) {
+        switch (target) {
+            case M5:
+                if (ACL2utils.NAME_AND_TYPE) {
+                    return "\"" + cn + "\" \"" + n + "\"";
+                } else {
+                    return "\"" + cn + "\" \"" + n + "\" " + (rt.equals("long") || rt.equals("double") ? "t" : "nil");
+                }
+            case M6:
+                return "(fieldCP \"" + n + "\" \"" + cn + "\" " + makeClassCP(rt, target) + ")";
+        }
+        throw new AssertionError();
     }
 
     private static String makeMethodCP(String n, String cn, Vector params, String rt, Target target) {
@@ -591,13 +606,13 @@ public class M6Method {
                 buf.append("(methodCP \"" + n + "\" \"" + cn + "\" (");
 
                 for (int i = 0; i < params.size(); i++) {
-                    buf.append(makeClassCP((String) params.get(i)));
+                    buf.append(makeClassCP((String) params.get(i), target));
                     if (i < params.size() - 1) {
                         buf.append(" ");
                     }
                 }
                 buf.append(") ");
-                buf.append(makeClassCP(rt));
+                buf.append(makeClassCP(rt, target));
                 break;
         }
         return buf.toString();
@@ -701,7 +716,7 @@ public class M6Method {
                     tok = new StringTokenizer(inst.toString().trim());
                     buf.append(tok.nextToken());
                     String typeName = tok.nextToken();
-                    buf.append(" " + makeClassCP(typeName));
+                    buf.append(" " + makeClassCP(typeName, targetModel));
                     tmp.append(buf.toString());
                     break;
 
@@ -716,8 +731,15 @@ public class M6Method {
                     String field = tok.nextToken();
                     String fieldClassName = field.substring(0, field.lastIndexOf("."));
                     String fieldName = field.substring(field.lastIndexOf(".") + 1);
+                    if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
+                        byte[] instCode = inst.getCode(null, 0);
+                        assert instCode.length == 3;
+                        int fieldRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
+                        String fieldRef = cf.getCP().getAsString(fieldRefOffs);
+                        fieldName += ":" + fieldRef.substring(fieldRef.lastIndexOf(' ') + 1);
+                    }
 
-                    buf.append(" " + makeFieldCP(fieldName, fieldClassName, fieldTypeName));
+                    buf.append(" " + makeFieldCP(fieldName, fieldClassName, fieldTypeName, targetModel));
 
                     tmp.append(buf.toString());
                     break;
@@ -778,7 +800,7 @@ public class M6Method {
                     tok = new StringTokenizer(inst.toString().trim());
                     buf.append(tok.nextToken()); // the opcode
                     String ArrayType = tok.nextToken();             // throw away the data type
-                    buf.append(makeClassCP(ArrayType));
+                    buf.append(makeClassCP(ArrayType, targetModel));
                     buf.append(" ");
                     String dimCount = tok.nextToken();
                     buf.append(" ");
@@ -797,12 +819,12 @@ public class M6Method {
                     String Method = tok.nextToken("(");
                     String MethodClassName = Method.substring(0, Method.lastIndexOf(".")).trim();
                     String MethodName = Method.substring(Method.lastIndexOf(".") + 1).trim();
-                    if (targetModel == Target.M5 && NAME_AND_TYPE) {
+                    if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
                         byte[] instCode = inst.getCode(null, 0);
                         assert instCode.length == 3;
                         int methRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
                         String methRef = cf.getCP().getAsString(methRefOffs);
-                        MethodName += methRef.substring(methRef.indexOf('('));
+                        MethodName += ":" + methRef.substring(methRef.indexOf('('));
                     }
                     Vector params = new Vector();
                     String rawparams = tok.nextToken("");
@@ -986,12 +1008,12 @@ public class M6Method {
                     String iMethod = tok.nextToken("(");
                     String iMethodClassName = iMethod.substring(0, iMethod.lastIndexOf(".")).trim();
                     String iMethodName = iMethod.substring(iMethod.lastIndexOf(".") + 1).trim();
-                    if (targetModel == Target.M5 && NAME_AND_TYPE) {
+                    if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
                         byte[] iinstCode = inst.getCode(null, 0);
                         assert iinstCode.length == 5;
                         int imethRefOffs = ((iinstCode[1] & 0xFF) << 8) | (iinstCode[2] & 0xFF);
                         String imethRef = cf.getCP().getAsString(imethRefOffs);
-                        iMethodName += imethRef.substring(imethRef.indexOf('('));
+                        iMethodName += ":" + imethRef.substring(imethRef.indexOf('('));
                     }
                     Vector iparams = new Vector();
                     String irawparams = tok.nextToken(")");
@@ -1039,8 +1061,15 @@ public class M6Method {
                     String sfield = tok.nextToken();
                     String sfieldClassName = sfield.substring(0, sfield.lastIndexOf("."));
                     String sfieldName = sfield.substring(sfield.lastIndexOf(".") + 1);
+                    if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
+                        byte[] instCode = inst.getCode(null, 0);
+                        assert instCode.length == 3;
+                        int sfieldRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
+                        String sfieldRef = cf.getCP().getAsString(sfieldRefOffs);
+                        sfieldName += ":" + sfieldRef.substring(sfieldRef.lastIndexOf(' ') + 1);
+                    }
 
-                    buf.append(" " + makeFieldCP(sfieldName, sfieldClassName, sfieldTypeName));
+                    buf.append(" " + makeFieldCP(sfieldName, sfieldClassName, sfieldTypeName, targetModel));
                     tmp.append(buf.toString());
                 }
                 break;
