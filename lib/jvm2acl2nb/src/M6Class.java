@@ -3,8 +3,16 @@
  * $Id: M6Class.java,v 1.6 2002/12/13 00:18:12 hbl Exp hbl $
  */
 
+import com.sun.tools.classfile.Attribute;
+import com.sun.tools.classfile.ClassFile;
+import com.sun.tools.classfile.ConstantPool;
+import com.sun.tools.classfile.ConstantPoolException;
+import com.sun.tools.classfile.DescriptorException;
+import com.sun.tools.classfile.Field;
+import com.sun.tools.classfile.Method;
 import java.util.*;
 import java.io.*;
+import java.nio.file.Paths;
 
 /**
  * M5Class represents a Java class in a format that allows easy conversion to a
@@ -34,8 +42,8 @@ import java.io.*;
  */
 public class M6Class {
 
-    private com.ibm.toad.cfparse.ClassFile cf;
-    private com.sun.tools.classfile.ClassFile cf2;
+    private com.ibm.toad.cfparse.ClassFile cf0;
+    private ClassFile cf;
 
     private String name;
     private boolean is_interface;
@@ -80,6 +88,33 @@ public class M6Class {
         }
     }
 
+    static class StringRef {
+
+        final String value;
+        final String printString;
+
+        StringRef(String value, String printString) {
+            this.value = value;
+            this.printString = printString;
+        }
+
+        @Override
+        public String toString() {
+            return printString;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof StringRef
+                    && value.equals(((StringRef) o).value);
+        }
+
+        @Override
+        public int hashCode() {
+            return value.hashCode() + 17;
+        }
+    }
+
     /**
      * Given a CFParse ClassFile object, this constructor creates an M5Class.
      * Note that you must then call <code>processClassFile()</code> before
@@ -87,8 +122,10 @@ public class M6Class {
      *
      * @param c the parsed class file (from the CFParse library)
      */
-    public M6Class(String className) throws IOException {
-        cf = new com.ibm.toad.cfparse.ClassFile(className);
+    public M6Class(String className) throws IOException, ConstantPoolException, DescriptorException {
+        cf0 = new com.ibm.toad.cfparse.ClassFile(className);
+        cf = ClassFile.read(Paths.get(className));
+        checkClassFiles(cf0, cf);
         name = null;
         super_name = null;
         fields = new Vector();
@@ -101,6 +138,208 @@ public class M6Class {
         lvtdesc = new StringBuffer();
 
         debug = true;
+    }
+
+    private static void checkClassFiles(com.ibm.toad.cfparse.ClassFile cf0, ClassFile cf) throws ConstantPoolException, DescriptorException {
+        assert cf0.getMagic() == cf.magic;
+        assert cf0.getMinor() == cf.minor_version;
+        assert cf0.getMajor() == cf.major_version;
+        assert cf0.getCP().length() == cf.constant_pool.size();
+        int next = 1;
+        BitSet validEntries = new BitSet();
+        for (ConstantPool.CPInfo current : cf.constant_pool.entries()) {
+            validEntries.set(next);
+            switch (current.getTag()) {
+                case ConstantPool.CONSTANT_Double:
+                case ConstantPool.CONSTANT_Long:
+                    next += 2;
+                    break;
+                default:
+                    next += 1;
+            }
+        }
+        for (int i = 0; i < cf.constant_pool.size(); i++) {
+            com.ibm.toad.cfparse.ConstantPoolEntry entry = cf0.getCP().get(i);
+            int entryType = cf0.getCP().getType(i);
+            if (!validEntries.get(i)) {
+                if (i == 0) {
+                    assert entryType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Utf8;
+                    assert entry instanceof com.ibm.toad.cfparse.ConstantPool.Utf8Entry;
+                    assert entry.getAsString().equals("<dummy Entry>");
+                } else {
+                    assert entryType == -1;
+                    assert entry == null;
+                }
+                continue;
+            }
+            ConstantPool.CPInfo info = cf.constant_pool.get(i);
+            assert entryType == info.getTag();
+            switch (info.getTag()) {
+                case ConstantPool.CONSTANT_Utf8:
+                    com.ibm.toad.cfparse.ConstantPool.Utf8Entry entryUtf8
+                            = (com.ibm.toad.cfparse.ConstantPool.Utf8Entry) entry;
+                    ConstantPool.CONSTANT_Utf8_info infoUt8
+                            = (ConstantPool.CONSTANT_Utf8_info) info;
+                    assert entryUtf8.getValue().equals(infoUt8.value);
+                    break;
+                case ConstantPool.CONSTANT_Integer:
+                    com.ibm.toad.cfparse.ConstantPool.IntegerEntry entryInteger
+                            = (com.ibm.toad.cfparse.ConstantPool.IntegerEntry) entry;
+                    ConstantPool.CONSTANT_Integer_info infoInteger
+                            = (ConstantPool.CONSTANT_Integer_info) info;
+                    assert entryInteger.getValue() == infoInteger.value;
+                    break;
+                case ConstantPool.CONSTANT_Float:
+                    com.ibm.toad.cfparse.ConstantPool.FloatEntry entryFloat
+                            = (com.ibm.toad.cfparse.ConstantPool.FloatEntry) entry;
+                    ConstantPool.CONSTANT_Float_info infoFloat
+                            = (ConstantPool.CONSTANT_Float_info) info;
+                    assert Float.floatToRawIntBits(entryFloat.getValue()) == Float.floatToRawIntBits(infoFloat.value);
+                    break;
+                case ConstantPool.CONSTANT_Long:
+                    com.ibm.toad.cfparse.ConstantPool.LongEntry entryLong
+                            = (com.ibm.toad.cfparse.ConstantPool.LongEntry) entry;
+                    ConstantPool.CONSTANT_Long_info infoLong
+                            = (ConstantPool.CONSTANT_Long_info) info;
+                    assert entryLong.getValue() == infoLong.value;
+                    break;
+                case ConstantPool.CONSTANT_Double:
+                    com.ibm.toad.cfparse.ConstantPool.DoubleEntry entryDouble
+                            = (com.ibm.toad.cfparse.ConstantPool.DoubleEntry) entry;
+                    ConstantPool.CONSTANT_Double_info infoDouble
+                            = (ConstantPool.CONSTANT_Double_info) info;
+                    assert Double.doubleToRawLongBits(entryDouble.getValue()) == Double.doubleToRawLongBits(infoDouble.value);
+                    break;
+                case ConstantPool.CONSTANT_Class:
+                    com.ibm.toad.cfparse.ConstantPool.ClassEntry entryClass
+                            = (com.ibm.toad.cfparse.ConstantPool.ClassEntry) entry;
+                    ConstantPool.CONSTANT_Class_info infoClass
+                            = (ConstantPool.CONSTANT_Class_info) info;
+                    entryClass.getAsString().equals(infoClass.getName());
+                    break;
+                case ConstantPool.CONSTANT_String:
+                    com.ibm.toad.cfparse.ConstantPool.StringEntry entryString
+                            = (com.ibm.toad.cfparse.ConstantPool.StringEntry) entry;
+                    ConstantPool.CONSTANT_String_info infoString
+                            = (ConstantPool.CONSTANT_String_info) info;
+                    entryString.getAsString().equals(infoString.getString());
+                    break;
+                case ConstantPool.CONSTANT_Fieldref:
+                    com.ibm.toad.cfparse.ConstantPool.FieldrefEntry entryFieldref
+                            = (com.ibm.toad.cfparse.ConstantPool.FieldrefEntry) entry;
+                    ConstantPool.CONSTANT_Fieldref_info infoFieldref
+                            = (ConstantPool.CONSTANT_Fieldref_info) info;
+                    entryFieldref.getAsString().equals(infoFieldref.toString());
+                    break;
+                case ConstantPool.CONSTANT_Methodref:
+                    com.ibm.toad.cfparse.ConstantPool.MethodrefEntry entryMethodref
+                            = (com.ibm.toad.cfparse.ConstantPool.MethodrefEntry) entry;
+                    ConstantPool.CONSTANT_Methodref_info infoMethodref
+                            = (ConstantPool.CONSTANT_Methodref_info) info;
+                    entryMethodref.getAsString().equals(infoMethodref.toString());
+                    break;
+                case ConstantPool.CONSTANT_InterfaceMethodref:
+                    com.ibm.toad.cfparse.ConstantPool.InterfaceMethodrefEntry entryInterfaceMethodref
+                            = (com.ibm.toad.cfparse.ConstantPool.InterfaceMethodrefEntry) entry;
+                    ConstantPool.CONSTANT_InterfaceMethodref_info infoInterfaceMethodref
+                            = (ConstantPool.CONSTANT_InterfaceMethodref_info) info;
+                    entryInterfaceMethodref.getAsString().equals(infoInterfaceMethodref.toString());
+                    break;
+                case ConstantPool.CONSTANT_NameAndType:
+                    com.ibm.toad.cfparse.ConstantPool.NameAndTypeEntry entryNameAndType
+                            = (com.ibm.toad.cfparse.ConstantPool.NameAndTypeEntry) entry;
+                    ConstantPool.CONSTANT_NameAndType_info infoNameAndType
+                            = (ConstantPool.CONSTANT_NameAndType_info) info;
+                    entryNameAndType.getAsString().equals(infoNameAndType.toString());
+                    break;
+                case ConstantPool.CONSTANT_MethodHandle:
+                    ConstantPool.CONSTANT_MethodHandle_info infoMethodHandle
+                            = (ConstantPool.CONSTANT_MethodHandle_info) info;
+                    assert false;
+                    break;
+                case ConstantPool.CONSTANT_MethodType:
+                    ConstantPool.CONSTANT_MethodType_info infoMethodType
+                            = (ConstantPool.CONSTANT_MethodType_info) info;
+                    assert false;
+                    break;
+                case ConstantPool.CONSTANT_InvokeDynamic:
+                    ConstantPool.CONSTANT_InvokeDynamic_info infoInvokeDynamic
+                            = (ConstantPool.CONSTANT_InvokeDynamic_info) info;
+                    assert false;
+                    break;
+                default:
+                    throw new AssertionError();
+            }
+        }
+        assert cf0.getAccess() == cf.access_flags.flags;
+        ConstantPool.CONSTANT_Class_info thisClassCP = (ConstantPool.CONSTANT_Class_info) cf.constant_pool.get(cf.this_class);
+        ConstantPool.CONSTANT_Utf8_info thisName = (ConstantPool.CONSTANT_Utf8_info) cf.constant_pool.get(thisClassCP.name_index);
+        assert cf0.getName().replace('.', '/').equals(thisName.value);
+        if (cf.super_class != 0) {
+            ConstantPool.CONSTANT_Class_info superClassCP = (ConstantPool.CONSTANT_Class_info) cf.constant_pool.get(cf.super_class);
+            ConstantPool.CONSTANT_Utf8_info superName = (ConstantPool.CONSTANT_Utf8_info) cf.constant_pool.get(superClassCP.name_index);
+            assert cf0.getSuperName().replace('.', '/').equals(superName.value);
+        } else {
+            assert cf0.getSuperName().isEmpty();
+        }
+        assert cf0.getInterfaces().length() == cf.interfaces.length;
+        for (int i = 0; i < cf.interfaces.length; i++) {
+            ConstantPool.CONSTANT_Class_info interfaceCP = (ConstantPool.CONSTANT_Class_info) cf.constant_pool.get(cf.interfaces[i]);
+            ConstantPool.CONSTANT_Utf8_info interfaceName = (ConstantPool.CONSTANT_Utf8_info) cf.constant_pool.get(interfaceCP.name_index);
+            assert cf0.getInterfaces().get(i).replace('.', '/').equals(interfaceName.value);
+        }
+        assert cf0.getFields().length() == cf.fields.length;
+        for (int i = 0; i < cf.fields.length; i++) {
+            Field field = cf.fields[i];
+            com.ibm.toad.cfparse.FieldInfo fieldInfo = cf0.getFields().get(i);
+            assert fieldInfo.getAccess() == field.access_flags.flags;
+            ConstantPool.CONSTANT_Utf8_info fieldName = (ConstantPool.CONSTANT_Utf8_info) cf.constant_pool.get(field.name_index);
+            assert fieldInfo.getName().equals(fieldName.value);
+            assert fieldInfo.getDesc().equals(field.descriptor.getValue(cf.constant_pool));
+            assert fieldInfo.getType().equals(field.descriptor.getFieldType(cf.constant_pool));
+            assert fieldInfo.getAttrs().length() == field.attributes.size();
+            for (int j = 0; j < field.attributes.size(); j++) {
+                Attribute attr = field.attributes.get(j);
+                com.ibm.toad.cfparse.attributes.AttrInfo attrInfo = fieldInfo.getAttrs().get(j);
+                assert attrInfo.getName().equals(attr.getName(cf.constant_pool));
+            }
+        }
+        assert cf0.getMethods().length() == cf.methods.length;
+        for (int i = 0; i < cf.methods.length; i++) {
+            Method method = cf.methods[i];
+            com.ibm.toad.cfparse.MethodInfo methodInfo = cf0.getMethods().get(i);
+            assert methodInfo.getAccess() == method.access_flags.flags;
+            ConstantPool.CONSTANT_Utf8_info methodName = (ConstantPool.CONSTANT_Utf8_info) cf.constant_pool.get(method.name_index);
+            assert methodInfo.getName().equals(methodName.value);
+            assert methodInfo.getDesc().equals(method.descriptor.getValue(cf.constant_pool));
+            String[] params = methodInfo.getParams();
+            assert params.length == method.descriptor.getParameterCount(cf.constant_pool);
+            String paramTypes = method.descriptor.getParameterTypes(cf.constant_pool);
+            assert paramTypes.charAt(0) == '(' && paramTypes.charAt(paramTypes.length() - 1) == ')';
+            paramTypes = paramTypes.substring(1, paramTypes.length() - 1);
+            if (params.length > 0) {
+                String[] params2 = paramTypes.split(",");
+                assert params.length == params2.length;
+                for (int j = 0; j < params.length; j++) {
+                    assert params[j].equals(params2[j].trim());
+                }
+            } else {
+                assert paramTypes.isEmpty();
+            }
+            assert methodInfo.getReturnType().equals(method.descriptor.getReturnType(cf.constant_pool));
+            assert methodInfo.getAttrs().length() == method.attributes.size();
+            for (int j = 0; j < method.attributes.size(); j++) {
+                Attribute attr = method.attributes.get(j);
+                com.ibm.toad.cfparse.attributes.AttrInfo attrInfo = methodInfo.getAttrs().get(j);
+                assert attrInfo.getName().equals(attr.getName(cf.constant_pool));
+            }
+        }
+        assert cf0.getAttrs().length() == cf.attributes.size();
+        for (int j = 0; j < cf.attributes.size(); j++) {
+            Attribute attr = cf.attributes.get(j);
+            com.ibm.toad.cfparse.attributes.AttrInfo attrInfo = cf0.getAttrs().get(j);
+            assert attrInfo.getName().equals(attr.getName(cf.constant_pool));
+        }
     }
 
     // don't care if there is a main method.
@@ -129,13 +368,13 @@ public class M6Class {
      * This method processes the ClassFile given in the constructor. It is
      * necessary to call this method before querying this class.
      */
-    public void processClassFile(Target target) throws IOException {
+    public void processClassFile(Target target) throws IOException, ConstantPoolException {
         /* First, the name of the class itself */
 
-        name = cf.getName();
-        super_name = cf.getSuperName();
+        name = cf0.getName();
+        super_name = cf0.getSuperName();
 
-        is_interface = com.ibm.toad.cfparse.utils.Access.isInterface(cf.getAccess());
+        is_interface = com.ibm.toad.cfparse.utils.Access.isInterface(cf0.getAccess());
         lntdesc.append("(defconst *" + name + "-lnt*\n"
                 + "(list \n");
         lvtdesc.append("(defconst *" + name + "-lvt*\n"
@@ -156,11 +395,11 @@ public class M6Class {
     }
 
     private void resolveAccessFlags() {
-        accessflags = new M6AccessFlags(cf.getAccess());
+        accessflags = new M6AccessFlags(cf0.getAccess());
     }
 
     private void resolveInterfaces() {
-        com.ibm.toad.cfparse.InterfaceList il = cf.getInterfaces();
+        com.ibm.toad.cfparse.InterfaceList il = cf0.getInterfaces();
         for (int i = 0; i < il.length(); i++) {
             interfaces.addElement(il.getInterfaceName(i));
         }
@@ -168,29 +407,29 @@ public class M6Class {
 
     private void resolveAttributes() {
         // not used here.
-        com.ibm.toad.cfparse.attributes.AttrInfoList al = cf.getAttrs();
+        com.ibm.toad.cfparse.attributes.AttrInfoList al = cf0.getAttrs();
         for (int i = 0; i < al.length(); i++) {
             attributes.addElement(al.get(i));
         }
     }
 
     private void resolveFields() throws IOException {
-        com.ibm.toad.cfparse.FieldInfoList fl = cf.getFields();
+        com.ibm.toad.cfparse.FieldInfoList fl = cf0.getFields();
         for (int i = 0; i < fl.length(); i++) {
-            M6Field field = new M6Field(cf, fl.get(i));
+            M6Field field = new M6Field(cf0, cf, fl.get(i));
             field.processField(constant_pool);
             fields.addElement(field);
         }
     }
 
-    private void resolveMethods(Target target) throws IOException {
+    private void resolveMethods(Target target) throws IOException, ConstantPoolException {
         /* This attribute ensures we have relative tags for
          * branches, rather than byte offsets */
         com.ibm.toad.cfparse.attributes.CodeAttrInfo.setViewer(com.ibm.toad.cfparse.instruction.MutableCodeSegment.getViewer());
 
-        com.ibm.toad.cfparse.MethodInfoList ml = cf.getMethods();
+        com.ibm.toad.cfparse.MethodInfoList ml = cf0.getMethods();
         for (int i = 0; i < ml.length(); i++) {
-            M6Method meth = new M6Method(cf, ml.get(i));
+            M6Method meth = new M6Method(cf0, cf, ml.get(i));
             meth.processMethod(constant_pool, target);
             // constant_pool here is used for registering constant symbols.
             // when the class is loaded we assume those get into the heap? ;; hanbing
@@ -230,19 +469,19 @@ public class M6Class {
             buf.append(pad);
             if (cp.get(i) instanceof Integer) {
                 buf.append("(INT " + cp.get(i) + ")");
-            } else if (cp.get(i) instanceof String) {
-                String str = (String) cp.get(i);
+            } else if (cp.get(i) instanceof StringRef) {
+                StringRef strRef = (StringRef) cp.get(i);
                 switch (target) {
                     case M5:
                         buf.append("(STRING (REF -1) ; \"" + cp.get(i) + "\"\n");
                         buf.append(pad).append("  ");
-                        for (int j = 0; j < str.length(); j++) {
-                            buf.append(" ").append((int) str.charAt(j));
+                        for (int j = 0; j < strRef.value.length(); j++) {
+                            buf.append(" ").append((int) strRef.value.charAt(j));
                         }
                         buf.append(")");
                         break;
                     case M6:
-                        buf.append("(STRING  \"" + str + "\")");
+                        buf.append("(STRING  \"" + strRef.printString + "\")");
                         break;
                 }
             } else if (cp.get(i) instanceof ClassRef) {

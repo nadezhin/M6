@@ -3,6 +3,9 @@
  * $Id: M6Method.java,v 1.12 2003/06/17 22:11:16 hbl Exp hbl $
  */
 
+import com.sun.tools.classfile.ClassFile;
+import com.sun.tools.classfile.ConstantPool;
+import com.sun.tools.classfile.ConstantPoolException;
 import java.util.*;
 import java.io.*;
 
@@ -27,7 +30,8 @@ import java.io.*;
 public class M6Method {
 
     private com.ibm.toad.cfparse.MethodInfo m;
-    private com.ibm.toad.cfparse.ClassFile cf;
+    private com.ibm.toad.cfparse.ClassFile cf0;
+    private ClassFile cf;
 
     private String name;
     private String desc;
@@ -65,7 +69,8 @@ public class M6Method {
      * @param c	The ClassFile representing the class
      * @param mi	The MethodInfo structure representing the method to analyze.
      */
-    public M6Method(com.ibm.toad.cfparse.ClassFile c, com.ibm.toad.cfparse.MethodInfo mi) {
+    public M6Method(com.ibm.toad.cfparse.ClassFile c0, ClassFile c, com.ibm.toad.cfparse.MethodInfo mi) {
+        cf0 = c0;
         cf = c;
         m = mi;
         params = new Vector();
@@ -163,7 +168,7 @@ public class M6Method {
 
     public String printLineNumberTable() {
         StringBuffer buf = new StringBuffer();
-        buf.append("((\"" + cf.getName() + "\" \"" + name + "\"");
+        buf.append("((\"" + cf0.getName() + "\" \"" + name + "\"");
         buf.append("\n  (");
         for (int i = 0; i < params.size(); i++) {
             buf.append(params.get(i));
@@ -187,7 +192,7 @@ public class M6Method {
 
     public String printLocalVariableTable() {
         StringBuffer buf = new StringBuffer();
-        buf.append("((\"" + cf.getName() + "\" \"" + name + "\"");
+        buf.append("((\"" + cf0.getName() + "\" \"" + name + "\"");
         buf.append("\n  (");
 
         for (int i = 0; i < params.size(); i++) {
@@ -385,7 +390,7 @@ public class M6Method {
      * representing the outer class from which this method is taken from.
      * @param target Target JVM model
      */
-    public void processMethod(Vector constant_pool, Target target) throws IOException {
+    public void processMethod(Vector constant_pool, Target target) throws IOException, ConstantPoolException {
         /* The name of the method */
         name = m.getName();
         if (debug) {
@@ -453,7 +458,7 @@ public class M6Method {
                     break;
             }
         } else {
-            com.ibm.toad.cfparse.instruction.MutableCodeSegment mc = new com.ibm.toad.cfparse.instruction.MutableCodeSegment(cf.getCP(), cai, true);
+            com.ibm.toad.cfparse.instruction.MutableCodeSegment mc = new com.ibm.toad.cfparse.instruction.MutableCodeSegment(cf0.getCP(), cai, true);
             mc.setInstructionFactory(new com.ibm.toad.cfparse.instruction.StringInstructionFactory());
             com.ibm.toad.cfparse.instruction.MutableCodeIterator mci = new com.ibm.toad.cfparse.instruction.MutableCodeIterator(mc);
             /* mci is an iterator that gives access to the instructions */
@@ -473,7 +478,7 @@ public class M6Method {
                     continue;
                 }
 
-                String resultStr = parseInst(inst, cf, constant_pool, offset, target);
+                String resultStr = parseInst(inst, cf0, cf, constant_pool, offset, target);
                 if (resultStr != null) {
                     m6instructions.addElement(resultStr);
                     offset = offset + inst.getLength(offset);
@@ -527,7 +532,7 @@ public class M6Method {
             com.ibm.toad.cfparse.attributes.AttrInfo sm = getStackMapAttrInfo(aal);
 
             if (sm != null) {
-                M6StackMapAttrInfo attr = new M6StackMapAttrInfo(sm, cf.getCP(), imc, max_locals);
+                M6StackMapAttrInfo attr = new M6StackMapAttrInfo(sm, cf0.getCP(), imc, max_locals);
                 stackmaps = attr;
             } else {
                 stackmaps = null;
@@ -613,16 +618,18 @@ public class M6Method {
     }
 
     private String parseInst(com.ibm.toad.cfparse.instruction.BaseInstruction inst,
-            com.ibm.toad.cfparse.ClassFile cf,
+            com.ibm.toad.cfparse.ClassFile cf0,
+            ClassFile cf,
             Vector constant_pool,
             int offset,
-            Target targetModel) {
+            Target targetModel) throws ConstantPoolException {
         StringBuffer tmp = new StringBuffer();
         StringBuffer tmp2 = new StringBuffer();
         StringBuffer buf = new StringBuffer();
         StringTokenizer tok;
         com.ibm.toad.cfparse.ConstantPoolEntry ent;
         int entType;
+        ConstantPool.CPInfo info;
 
         System.out.println(inst.toString());
 
@@ -729,7 +736,7 @@ public class M6Method {
                         byte[] instCode = inst.getCode(null, 0);
                         assert instCode.length == 3;
                         int fieldRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
-                        String fieldRef = cf.getCP().getAsString(fieldRefOffs);
+                        String fieldRef = cf0.getCP().getAsString(fieldRefOffs);
                         fieldName += ":" + fieldRef.substring(fieldRef.lastIndexOf(' ') + 1);
                     }
 
@@ -817,7 +824,7 @@ public class M6Method {
                         byte[] instCode = inst.getCode(null, 0);
                         assert instCode.length == 3;
                         int methRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
-                        String methRef = cf.getCP().getAsString(methRefOffs);
+                        String methRef = cf0.getCP().getAsString(methRefOffs);
                         MethodName += ":" + methRef.substring(methRef.indexOf('('));
                     }
                     Vector params = new Vector();
@@ -852,9 +859,9 @@ public class M6Method {
                         tmp.append("ldc ");
                         byte cpidx1 = inst.getCode(null, 1)[1];
                         int cpidx = (int) cpidx1 & 255;
-                        ent = cf.getCP().get(cpidx);
-                        entType = cf.getCP().getType(cpidx);
-
+                        ent = cf0.getCP().get(cpidx);
+                        entType = cf0.getCP().getType(cpidx);
+                        info = cf.constant_pool.get(cpidx);
                     } else {
                         tmp.append("ldc_w ");
 
@@ -864,8 +871,9 @@ public class M6Method {
                         cpidx2 = cpidx2 & 255;
 
                         int ldc_idx = (cpidx1 << 8) | cpidx2;
-                        ent = cf.getCP().get(ldc_idx);
-                        entType = cf.getCP().getType(ldc_idx);
+                        ent = cf0.getCP().get(ldc_idx);
+                        entType = cf0.getCP().getType(ldc_idx);
+                        info = cf.constant_pool.get(ldc_idx);
                     }
 
                     if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Integer) {
@@ -928,8 +936,10 @@ public class M6Method {
                         }
                         tmp2.append(";;CLASS:: \"" + val + "\"");
                     } else {
+                        ConstantPool.CONSTANT_String_info s_info = (ConstantPool.CONSTANT_String_info) info;
+                        ConstantPool.CONSTANT_Utf8_info s_name = cf.constant_pool.getUTF8Info(s_info.string_index);
                         com.ibm.toad.cfparse.ConstantPool.StringEntry s_ent = (com.ibm.toad.cfparse.ConstantPool.StringEntry) ent;
-                        String val = new String(s_ent.getAsString());
+                        M6Class.StringRef val = new M6Class.StringRef(s_name.value, s_ent.getAsString());
 
                         if (constant_pool.contains(val)) {
                             tmp.append(constant_pool.indexOf(val));
@@ -954,8 +964,8 @@ public class M6Method {
 
                     int ldc_idx = (cpidx1 << 8) | cpidx2;
 
-                    ent = cf.getCP().get(ldc_idx);
-                    entType = cf.getCP().getType(ldc_idx);
+                    ent = cf0.getCP().get(ldc_idx);
+                    entType = cf0.getCP().getType(ldc_idx);
 
                     if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Long) {
                         com.ibm.toad.cfparse.ConstantPool.LongEntry lent = (com.ibm.toad.cfparse.ConstantPool.LongEntry) ent;
@@ -1006,7 +1016,7 @@ public class M6Method {
                         byte[] iinstCode = inst.getCode(null, 0);
                         assert iinstCode.length == 5;
                         int imethRefOffs = ((iinstCode[1] & 0xFF) << 8) | (iinstCode[2] & 0xFF);
-                        String imethRef = cf.getCP().getAsString(imethRefOffs);
+                        String imethRef = cf0.getCP().getAsString(imethRefOffs);
                         iMethodName += ":" + imethRef.substring(imethRef.indexOf('('));
                     }
                     Vector iparams = new Vector();
@@ -1059,7 +1069,7 @@ public class M6Method {
                         byte[] instCode = inst.getCode(null, 0);
                         assert instCode.length == 3;
                         int sfieldRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
-                        String sfieldRef = cf.getCP().getAsString(sfieldRefOffs);
+                        String sfieldRef = cf0.getCP().getAsString(sfieldRefOffs);
                         sfieldName += ":" + sfieldRef.substring(sfieldRef.lastIndexOf(' ') + 1);
                     }
 

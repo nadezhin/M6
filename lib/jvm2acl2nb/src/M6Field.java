@@ -1,4 +1,5 @@
 
+import com.sun.tools.classfile.ClassFile;
 import java.util.Vector;
 
 public class M6Field {
@@ -10,7 +11,7 @@ public class M6Field {
     private com.ibm.toad.cfparse.FieldInfo field;
     private int index; // index into the constant pool
 
-    public M6Field(com.ibm.toad.cfparse.ClassFile cp, com.ibm.toad.cfparse.FieldInfo f) {
+    public M6Field(com.ibm.toad.cfparse.ClassFile cp0, ClassFile cp, com.ibm.toad.cfparse.FieldInfo f) {
         field = f;
         name = f.getName();
         desc = f.getDesc();
@@ -71,7 +72,7 @@ public class M6Field {
                 index = cp.size() - 1;
             }
         } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_String) {
-            String val = value;
+            M6Class.StringRef val = new M6Class.StringRef(value, value);
             if (cp.contains(val)) {
                 index = cp.indexOf(val);
             } else {
