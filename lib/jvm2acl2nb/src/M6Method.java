@@ -3,12 +3,6 @@
  * $Id: M6Method.java,v 1.12 2003/06/17 22:11:16 hbl Exp hbl $
  */
 
-import com.ibm.toad.cfparse.*;
-import com.ibm.toad.cfparse.ConstantPool.*;
-import com.ibm.toad.cfparse.utils.*;
-import com.ibm.toad.cfparse.instruction.*;
-import com.ibm.toad.cfparse.attributes.*;
-
 import java.util.*;
 import java.io.*;
 
@@ -32,8 +26,8 @@ import java.io.*;
  */
 public class M6Method {
 
-    private MethodInfo m;
-    private ClassFile cf;
+    private com.ibm.toad.cfparse.MethodInfo m;
+    private com.ibm.toad.cfparse.ClassFile cf;
 
     private String name;
     private String desc;
@@ -47,8 +41,8 @@ public class M6Method {
     private int code_length;
     private M6ExceptionHandler[] handlers;
     private M6StackMapAttrInfo stackmaps;
-    private LineNumberAttrInfo lnt;
-    private LocalVariableAttrInfo lvt;
+    private com.ibm.toad.cfparse.attributes.LineNumberAttrInfo lnt;
+    private com.ibm.toad.cfparse.attributes.LocalVariableAttrInfo lvt;
 
     private Vector instructions;
     private Vector m6instructions;
@@ -71,7 +65,7 @@ public class M6Method {
      * @param c	The ClassFile representing the class
      * @param mi	The MethodInfo structure representing the method to analyze.
      */
-    public M6Method(ClassFile c, MethodInfo mi) {
+    public M6Method(com.ibm.toad.cfparse.ClassFile c, com.ibm.toad.cfparse.MethodInfo mi) {
         cf = c;
         m = mi;
         params = new Vector();
@@ -278,7 +272,7 @@ public class M6Method {
         switch (target) {
             case M5:
                 buf.append(") ");
-                buf.append((Access.isSynchronized(m.getAccess()) ? "t" : "nil") + "\n");
+                buf.append((com.ibm.toad.cfparse.utils.Access.isSynchronized(m.getAccess()) ? "t" : "nil") + "\n");
                 break;
             case M6:
                 buf.append(")\n");
@@ -439,19 +433,19 @@ public class M6Method {
         accessflags = new M6AccessFlags(m.getAccess());
 
         /* Process the code attribute */
-        AttrInfoList al = m.getAttrs();
+        com.ibm.toad.cfparse.attributes.AttrInfoList al = m.getAttrs();
         if (al == null) {
             instructions = null;
             return;  /* abstract method--no instructions */
 
         }
 
-        CodeAttrInfo cai = (CodeAttrInfo) al.get("Code");
+        com.ibm.toad.cfparse.attributes.CodeAttrInfo cai = (com.ibm.toad.cfparse.attributes.CodeAttrInfo) al.get("Code");
         if (cai == null || no_method_body) {
             instructions = null;
             switch (target) {
                 case M5:
-                    if (Access.isNative(m.getAccess())) {
+                    if (com.ibm.toad.cfparse.utils.Access.isNative(m.getAccess())) {
                         m6instructions.addElement("NIL ; native method");
                     }
                     break;
@@ -459,20 +453,20 @@ public class M6Method {
                     break;
             }
         } else {
-            MutableCodeSegment mc = new MutableCodeSegment(cf.getCP(), cai, true);
-            mc.setInstructionFactory(new StringInstructionFactory());
-            MutableCodeIterator mci = new MutableCodeIterator(mc);
+            com.ibm.toad.cfparse.instruction.MutableCodeSegment mc = new com.ibm.toad.cfparse.instruction.MutableCodeSegment(cf.getCP(), cai, true);
+            mc.setInstructionFactory(new com.ibm.toad.cfparse.instruction.StringInstructionFactory());
+            com.ibm.toad.cfparse.instruction.MutableCodeIterator mci = new com.ibm.toad.cfparse.instruction.MutableCodeIterator(mc);
             /* mci is an iterator that gives access to the instructions */
 
             int offset = 0;
-            ImmutableCodeSegment imc = new ImmutableCodeSegment(cai.getCode());
+            com.ibm.toad.cfparse.instruction.ImmutableCodeSegment imc = new com.ibm.toad.cfparse.instruction.ImmutableCodeSegment(cai.getCode());
             // ImmutableCodeIterator imci = new ImmutableCodeIterator(imc);
             // get the parsed code part
 
             // System.out.println("number of instructions" + mci.length() + " " + imc.getNumInstructions());
             // System.out.println("CodeSize" + cai.getCode().length + " " + " " + imc.getOffset(imc.getNumInstructions()-1));
             while (mci.hasNext()) {
-                BaseInstruction inst = (BaseInstruction) mci.next();
+                com.ibm.toad.cfparse.instruction.BaseInstruction inst = (com.ibm.toad.cfparse.instruction.BaseInstruction) mci.next();
                 //     System.out.println("\n"+idx+inst.toString());
                 if (inst.toString().startsWith("line_number")) {
                     m6instructions.addElement("; " + inst.toString().trim());
@@ -517,7 +511,7 @@ public class M6Method {
             }
 
             // get handlers correctly.
-            CodeAttrInfo.ExceptionInfo[] exceptions = cai.getExceptions();
+            com.ibm.toad.cfparse.attributes.CodeAttrInfo.ExceptionInfo[] exceptions = cai.getExceptions();
             int ecount = cai.getNumExceptions();
 
             if (ecount > 0) {
@@ -529,8 +523,8 @@ public class M6Method {
             }
 
             // get StackMap Attributes
-            AttrInfoList aal = cai.getAttrs();
-            AttrInfo sm = getStackMapAttrInfo(aal);
+            com.ibm.toad.cfparse.attributes.AttrInfoList aal = cai.getAttrs();
+            com.ibm.toad.cfparse.attributes.AttrInfo sm = getStackMapAttrInfo(aal);
 
             if (sm != null) {
                 M6StackMapAttrInfo attr = new M6StackMapAttrInfo(sm, cf.getCP(), imc, max_locals);
@@ -551,25 +545,25 @@ public class M6Method {
         }
     }
 
-    private static LineNumberAttrInfo getLineNumberAttrInfo(AttrInfoList al) {
+    private static com.ibm.toad.cfparse.attributes.LineNumberAttrInfo getLineNumberAttrInfo(com.ibm.toad.cfparse.attributes.AttrInfoList al) {
         if (al == null) {
             return null;
         }
-        return (LineNumberAttrInfo) (AttrUtils.getAttrByName(al, "LineNumberTable"));
+        return (com.ibm.toad.cfparse.attributes.LineNumberAttrInfo) (com.ibm.toad.cfparse.utils.AttrUtils.getAttrByName(al, "LineNumberTable"));
     }
 
-    private static LocalVariableAttrInfo getLocalVariableAttrInfo(AttrInfoList al) {
+    private static com.ibm.toad.cfparse.attributes.LocalVariableAttrInfo getLocalVariableAttrInfo(com.ibm.toad.cfparse.attributes.AttrInfoList al) {
         if (al == null) {
             return null;
         }
-        return (LocalVariableAttrInfo) (AttrUtils.getAttrByName(al, "LocalVariableTable"));
+        return (com.ibm.toad.cfparse.attributes.LocalVariableAttrInfo) (com.ibm.toad.cfparse.utils.AttrUtils.getAttrByName(al, "LocalVariableTable"));
     }
 
-    private static AttrInfo getStackMapAttrInfo(AttrInfoList al) {
+    private static com.ibm.toad.cfparse.attributes.AttrInfo getStackMapAttrInfo(com.ibm.toad.cfparse.attributes.AttrInfoList al) {
         if (al == null) {
             return null;
         }
-        return AttrUtils.getAttrByName(al, "StackMap");
+        return com.ibm.toad.cfparse.utils.AttrUtils.getAttrByName(al, "StackMap");
     }
 
     private static String makeClassCP(String jtype, Target target) {
@@ -618,8 +612,8 @@ public class M6Method {
         return buf.toString();
     }
 
-    private String parseInst(BaseInstruction inst,
-            ClassFile cf,
+    private String parseInst(com.ibm.toad.cfparse.instruction.BaseInstruction inst,
+            com.ibm.toad.cfparse.ClassFile cf,
             Vector constant_pool,
             int offset,
             Target targetModel) {
@@ -627,7 +621,7 @@ public class M6Method {
         StringBuffer tmp2 = new StringBuffer();
         StringBuffer buf = new StringBuffer();
         StringTokenizer tok;
-        ConstantPoolEntry ent;
+        com.ibm.toad.cfparse.ConstantPoolEntry ent;
         int entType;
 
         System.out.println(inst.toString());
@@ -669,40 +663,40 @@ public class M6Method {
             }
         } else {
             int opCode = inst.getOpCode();
-            boolean isWide = opCode == JVMConstants.WIDE;
+            boolean isWide = opCode == com.ibm.toad.cfparse.instruction.JVMConstants.WIDE;
             if (isWide) {
                 opCode = inst.getCode(null, 0)[1] & 0xFF;
-                if (opCode != JVMConstants.IINC
-                        && opCode != JVMConstants.ALOAD
-                        && opCode != JVMConstants.ASTORE
-                        && opCode != JVMConstants.DLOAD
-                        && opCode != JVMConstants.DSTORE
-                        && opCode != JVMConstants.FLOAD
-                        && opCode != JVMConstants.FSTORE
-                        && opCode != JVMConstants.ILOAD
-                        && opCode != JVMConstants.ISTORE
-                        && opCode != JVMConstants.LLOAD
-                        && opCode != JVMConstants.LSTORE
-                        && opCode != JVMConstants.RET) {
-                    opCode = JVMConstants.WIDE;
+                if (opCode != com.ibm.toad.cfparse.instruction.JVMConstants.IINC
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.ALOAD
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.ASTORE
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.DLOAD
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.DSTORE
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.FLOAD
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.FSTORE
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.ILOAD
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.ISTORE
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.LLOAD
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.LSTORE
+                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.RET) {
+                    opCode = com.ibm.toad.cfparse.instruction.JVMConstants.WIDE;
                 }
             }
             switch (opCode) {
                 /* aload v5
                  * (JVM::aload 4) */
-                case JVMConstants.ALOAD:
-                case JVMConstants.ASTORE:
-                case JVMConstants.ILOAD:
-                case JVMConstants.ISTORE:
-                case JVMConstants.LLOAD:
-                case JVMConstants.LSTORE:
-                case JVMConstants.FLOAD:
-                case JVMConstants.FSTORE:
-                case JVMConstants.DLOAD:
-                case JVMConstants.DSTORE:
-                case JVMConstants.BIPUSH:
-                case JVMConstants.RET:
-                case JVMConstants.SIPUSH:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.ALOAD:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.ASTORE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.ILOAD:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.ISTORE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.LLOAD:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.LSTORE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.FLOAD:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.FSTORE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.DLOAD:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.DSTORE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.BIPUSH:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.RET:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.SIPUSH:
                     buf.append(inst.toString().replace("wide ", "").trim());
                     buf.deleteCharAt(inst.toString().trim().indexOf(" ") + 1);
                     tmp.append(buf);
@@ -710,9 +704,9 @@ public class M6Method {
 
                 /* anewarray java.lang.String
                  * (JVM::anewarray (class "java.lang.String")) */
-                case JVMConstants.ANEWARRAY:
-                case JVMConstants.NEW:
-                case JVMConstants.INSTANCEOF:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.ANEWARRAY:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.NEW:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.INSTANCEOF:
                     tok = new StringTokenizer(inst.toString().trim());
                     buf.append(tok.nextToken());
                     String typeName = tok.nextToken();
@@ -722,8 +716,8 @@ public class M6Method {
 
                 /* getfield Model3D java.awt.Dimention.width
                  * (JVM::getfield (fieldCP "width" "java.awt.Dimention" (class "java.awt.Dimention.Model3D")) */
-                case JVMConstants.GETFIELD:
-                case JVMConstants.PUTFIELD:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.GETFIELD:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.PUTFIELD:
                     tok = new StringTokenizer(inst.toString().trim());
                     buf.append(tok.nextToken()); // the opcode
 
@@ -746,25 +740,25 @@ public class M6Method {
 
                 /* goto TAG_9
                  * (JVM::goto ) */
-                case JVMConstants.GOTO:
-                case JVMConstants.IF_ACMPEQ:
-                case JVMConstants.IF_ACMPNE:
-                case JVMConstants.IF_ICMPEQ:
-                case JVMConstants.IF_ICMPNE:
-                case JVMConstants.IF_ICMPLT:
-                case JVMConstants.IF_ICMPGE:
-                case JVMConstants.IF_ICMPGT:
-                case JVMConstants.IF_ICMPLE:
-                case JVMConstants.IFEQ:
-                case JVMConstants.IFNE:
-                case JVMConstants.IFLT:
-                case JVMConstants.IFGE:
-                case JVMConstants.IFGT:
-                case JVMConstants.IFLE:
-                case JVMConstants.IFNONNULL:
-                case JVMConstants.IFNULL:
-                case JVMConstants.JSR:
-                case JVMConstants.JSR_W:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.GOTO:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ACMPEQ:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ACMPNE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPEQ:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPNE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPLT:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPGE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPGT:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPLE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IFEQ:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IFNE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IFLT:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IFGE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IFGT:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IFLE:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IFNONNULL:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IFNULL:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.JSR:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.JSR_W:
                     buf.append(inst.toString().trim());
                     switch (targetModel) {
                         case M5:
@@ -779,7 +773,7 @@ public class M6Method {
 
                 /* newarray T_INT
                  * (JVM::newarray T_INT) */
-                case JVMConstants.NEWARRAY:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.NEWARRAY:
                     String narray = inst.toString().trim();
                     tmp.append(narray.substring(0, narray.indexOf(" "))); // op-code
                     tmp.append(" " + narray.substring(narray.lastIndexOf("_") + 1));
@@ -787,7 +781,7 @@ public class M6Method {
 
                 /* iinc v4 #1
                  * (JVM::iinc 4 1) */
-                case JVMConstants.IINC:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IINC:
                     buf.append(inst.toString().replace("wide ", "").trim());
                     buf.deleteCharAt(inst.toString().trim().indexOf(" ") + 1);
                     buf.deleteCharAt(buf.toString().lastIndexOf(" ") + 1);
@@ -796,7 +790,7 @@ public class M6Method {
 
                 /* multianewarray java.lang.Object[][][] #3
                  * (JVM::multianewarray 3) */
-                case JVMConstants.MULTIANEWARRAY:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.MULTIANEWARRAY:
                     tok = new StringTokenizer(inst.toString().trim());
                     buf.append(tok.nextToken()); // the opcode
                     String ArrayType = tok.nextToken();             // throw away the data type
@@ -810,9 +804,9 @@ public class M6Method {
 
                 /* invokevirtual int Alpha.fun2(java.lang.Object, int)
                  * (JVM::invokevirtual "Alpha" "fun2" 2) */
-                case JVMConstants.INVOKEVIRTUAL:
-                case JVMConstants.INVOKESTATIC:
-                case JVMConstants.INVOKESPECIAL:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKEVIRTUAL:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKESTATIC:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKESPECIAL:
                     tok = new StringTokenizer(inst.toString().trim());
                     tmp.append(tok.nextToken()); // opcode
                     String MethodReturnType = tok.nextToken(); // throw away the return type
@@ -852,9 +846,9 @@ public class M6Method {
                  * ldc #65535
                  * (JVM::ldc 3)  3 points to the STRING object "Hello, World!"
                  * (JVM::ldc 5)  5 points to an INT object 65535 */
-                case JVMConstants.LDC:
-                case JVMConstants.LDC_W:
-                    if (opCode == JVMConstants.LDC) {
+                case com.ibm.toad.cfparse.instruction.JVMConstants.LDC:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.LDC_W:
+                    if (opCode == com.ibm.toad.cfparse.instruction.JVMConstants.LDC) {
                         tmp.append("ldc ");
                         byte cpidx1 = inst.getCode(null, 1)[1];
                         int cpidx = (int) cpidx1 & 255;
@@ -874,9 +868,9 @@ public class M6Method {
                         entType = cf.getCP().getType(ldc_idx);
                     }
 
-                    if (entType == ConstantPool.CONSTANT_Integer) {
+                    if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Integer) {
 
-                        IntegerEntry ient = (IntegerEntry) ent;
+                        com.ibm.toad.cfparse.ConstantPool.IntegerEntry ient = (com.ibm.toad.cfparse.ConstantPool.IntegerEntry) ent;
                         Integer val = new Integer(ient.getValue());
 
                         if (constant_pool.contains(val)) {
@@ -886,9 +880,9 @@ public class M6Method {
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
                         tmp2.append(";;INT:: \"" + val + "\"");
-                    } else if (entType == ConstantPool.CONSTANT_Float) {
+                    } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Float) {
 
-                        FloatEntry fent = (FloatEntry) ent;
+                        com.ibm.toad.cfparse.ConstantPool.FloatEntry fent = (com.ibm.toad.cfparse.ConstantPool.FloatEntry) ent;
                         Float val = new Float(fent.getValue());
 
                         if (constant_pool.contains(val)) {
@@ -898,9 +892,9 @@ public class M6Method {
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
                         tmp2.append(";;FLOAT:: \"" + val + "\"");
-                    } else if (entType == ConstantPool.CONSTANT_Double) {
+                    } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Double) {
 
-                        DoubleEntry fent = (DoubleEntry) ent;
+                        com.ibm.toad.cfparse.ConstantPool.DoubleEntry fent = (com.ibm.toad.cfparse.ConstantPool.DoubleEntry) ent;
                         Double val = new Double(fent.getValue());
 
                         if (constant_pool.contains(val)) {
@@ -910,9 +904,9 @@ public class M6Method {
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
                         tmp2.append(";;Doulbe:: \"" + val + "\"");
-                    } else if (entType == ConstantPool.CONSTANT_Long) {
+                    } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Long) {
 
-                        LongEntry fent = (LongEntry) ent;
+                        com.ibm.toad.cfparse.ConstantPool.LongEntry fent = (com.ibm.toad.cfparse.ConstantPool.LongEntry) ent;
                         Long val = new Long(fent.getValue());
 
                         if (constant_pool.contains(val)) {
@@ -922,8 +916,8 @@ public class M6Method {
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
                         tmp2.append(";;Long:: \"" + val + "\"");
-                    } else if (entType == ConstantPool.CONSTANT_Class) {
-                        ClassEntry cl_ent = (ClassEntry) ent;
+                    } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Class) {
+                        com.ibm.toad.cfparse.ConstantPool.ClassEntry cl_ent = (com.ibm.toad.cfparse.ConstantPool.ClassEntry) ent;
                         M6Class.ClassRef val = new M6Class.ClassRef(cl_ent.getAsJava());
 
                         if (constant_pool.contains(val)) {
@@ -934,7 +928,7 @@ public class M6Method {
                         }
                         tmp2.append(";;CLASS:: \"" + val + "\"");
                     } else {
-                        StringEntry s_ent = (StringEntry) ent;
+                        com.ibm.toad.cfparse.ConstantPool.StringEntry s_ent = (com.ibm.toad.cfparse.ConstantPool.StringEntry) ent;
                         String val = new String(s_ent.getAsString());
 
                         if (constant_pool.contains(val)) {
@@ -949,7 +943,7 @@ public class M6Method {
 
                 /* ldc2_w 837462398
                  * (JVM::ldc2_w 3)  3 points to the LONG object 837462398 */
-                case JVMConstants.LDC2_W:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.LDC2_W:
 
                     tmp.append("ldc2_w ");
 
@@ -963,8 +957,8 @@ public class M6Method {
                     ent = cf.getCP().get(ldc_idx);
                     entType = cf.getCP().getType(ldc_idx);
 
-                    if (entType == ConstantPool.CONSTANT_Long) {
-                        LongEntry lent = (LongEntry) ent;
+                    if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Long) {
+                        com.ibm.toad.cfparse.ConstantPool.LongEntry lent = (com.ibm.toad.cfparse.ConstantPool.LongEntry) ent;
                         Long val = new Long(lent.getValue());
 
                         if (constant_pool.contains(val)) {
@@ -975,7 +969,7 @@ public class M6Method {
                         }
                         tmp2.append(";; LONG:: \"" + val + "\"");
                     } else {
-                        DoubleEntry dent = (DoubleEntry) ent;
+                        com.ibm.toad.cfparse.ConstantPool.DoubleEntry dent = (com.ibm.toad.cfparse.ConstantPool.DoubleEntry) ent;
                         Double val = new Double(dent.getValue());
 
                         if (constant_pool.contains(val)) {
@@ -992,8 +986,8 @@ public class M6Method {
                 /* Non-standard bytecode
                  * Varies machine to machine
                  * We throw them away */
-                case JVMConstants.IMPDEP1:
-                case JVMConstants.IMPDEP2:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IMPDEP1:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.IMPDEP2:
                     System.out.println("IMPDEP!!!");
                     return null;
 
@@ -1001,7 +995,7 @@ public class M6Method {
                 /* invokeinterface <returntype> <methodClass>.<methodname>(<param>*) */
                 /* (invokeinterface byte[] com.ibm.toad.cfparse.instruction.BaseInstruction.getCode(int[], int) #3 #0 )) */
                 /* (JVM::ldc2_w 3)  3 points to the LONG object 837462398 */
-                case JVMConstants.INVOKEINTERFACE: {
+                case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKEINTERFACE: {
                     tok = new StringTokenizer(inst.toString().trim());
                     tmp.append(tok.nextToken()); // opcode
                     String iMethodReturnType = tok.nextToken();
@@ -1044,7 +1038,7 @@ public class M6Method {
                 }
                 break;
 
-                case JVMConstants.CHECKCAST: {
+                case com.ibm.toad.cfparse.instruction.JVMConstants.CHECKCAST: {
                     tok = new StringTokenizer(inst.toString().trim());
                     tmp.append(tok.nextToken());
                     String castType = tok.nextToken();
@@ -1052,8 +1046,8 @@ public class M6Method {
                 }
                 break;
 
-                case JVMConstants.PUTSTATIC:
-                case JVMConstants.GETSTATIC: {
+                case com.ibm.toad.cfparse.instruction.JVMConstants.PUTSTATIC:
+                case com.ibm.toad.cfparse.instruction.JVMConstants.GETSTATIC: {
                     tok = new StringTokenizer(inst.toString().trim());
                     buf.append(tok.nextToken()); // the opcode
 
@@ -1075,7 +1069,7 @@ public class M6Method {
                 break;
 
                 /*	  lookupswitch  <count>  <(key target)>* default */
-                case JVMConstants.LOOKUPSWITCH: { /* for pupose of type checking, we only need to collect two list 
+                case com.ibm.toad.cfparse.instruction.JVMConstants.LOOKUPSWITCH: { /* for pupose of type checking, we only need to collect two list 
                      * key list and target list, we don't really care how those values are used.
                      * but have a execution model in ACL2 in mind. 
                      * I would chose to have a representation closer to the real JVM.  */
@@ -1109,7 +1103,7 @@ public class M6Method {
                 }
                 break;
 
-                case JVMConstants.TABLESWITCH: {
+                case com.ibm.toad.cfparse.instruction.JVMConstants.TABLESWITCH: {
                     tok = new StringTokenizer(inst.toString().trim());
                     tmp.append(tok.nextToken()); // the opcode
 

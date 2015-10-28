@@ -1,5 +1,4 @@
 
-import com.ibm.toad.cfparse.*;
 import java.util.*;
 import java.io.*;
 
@@ -57,14 +56,12 @@ public class jvm2acl2 {
     }
 
     private static void processFiles(String tablename, String[] args, Target target) {
-        ClassFile[] cfs = new ClassFile[args.length];
         M6Class[] classes = new M6Class[args.length];
 
         /* We parse each of the classfiles in order */
         for (int i = 0; i < args.length; i++) {
             try {
-                cfs[i] = (ClassFile) new ClassFile(args[i]);
-                classes[i] = new M6Class(cfs[i]);
+                classes[i] = new M6Class(args[i]);
                 classes[i].processClassFile(target);
             } catch (java.lang.Exception e) {
                 System.err.println("Could not open file " + args[i] + " " + e);
@@ -91,7 +88,7 @@ public class jvm2acl2 {
         /* The class table */
         for (int i = 0; i < classes.length; i++) {
 
-            String classname = cfs[i].getName();
+            String classname = classes[i].getName();
             switch (target) {
                 case M5:
                     ctBuf.append("(defconst *" + classname + "-class-decl*\n");

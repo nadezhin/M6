@@ -6,7 +6,6 @@
 // it also take an -a argument that tells it to ignore method-body
 //
 
-import com.ibm.toad.cfparse.*;
 import java.util.*;
 import java.io.*;
 
@@ -128,12 +127,11 @@ public class jvm2acl2x {
 
     private static String processOneFile(String classfn, String pathn, StringBuffer table, Target target) {
         try {
-            ClassFile cfs = (ClassFile) new ClassFile(classfn);
-            M6Class curClass = new M6Class(cfs);
+            M6Class curClass = new M6Class(classfn);
             curClass.processClassFile(target);
 
             StringBuffer ctBuf = new StringBuffer();
-            String classname = cfs.getName();
+            String classname = curClass.getName();
 
             if (abstract_mode) {
                 classname = classname + "-abs";

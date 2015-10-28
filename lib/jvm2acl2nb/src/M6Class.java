@@ -3,10 +3,6 @@
  * $Id: M6Class.java,v 1.6 2002/12/13 00:18:12 hbl Exp hbl $
  */
 
-import com.ibm.toad.cfparse.*;
-import com.ibm.toad.cfparse.utils.*;
-import com.ibm.toad.cfparse.instruction.*;
-import com.ibm.toad.cfparse.attributes.*;
 import java.util.*;
 import java.io.*;
 
@@ -38,7 +34,8 @@ import java.io.*;
  */
 public class M6Class {
 
-    private ClassFile cf;
+    private com.ibm.toad.cfparse.ClassFile cf;
+    private com.sun.tools.classfile.ClassFile cf2;
 
     private String name;
     private boolean is_interface;
@@ -90,8 +87,8 @@ public class M6Class {
      *
      * @param c the parsed class file (from the CFParse library)
      */
-    public M6Class(ClassFile c) {
-        cf = c;
+    public M6Class(String className) throws IOException {
+        cf = new com.ibm.toad.cfparse.ClassFile(className);
         name = null;
         super_name = null;
         fields = new Vector();
@@ -138,7 +135,7 @@ public class M6Class {
         name = cf.getName();
         super_name = cf.getSuperName();
 
-        is_interface = Access.isInterface(cf.getAccess());
+        is_interface = com.ibm.toad.cfparse.utils.Access.isInterface(cf.getAccess());
         lntdesc.append("(defconst *" + name + "-lnt*\n"
                 + "(list \n");
         lvtdesc.append("(defconst *" + name + "-lvt*\n"
@@ -163,7 +160,7 @@ public class M6Class {
     }
 
     private void resolveInterfaces() {
-        InterfaceList il = cf.getInterfaces();
+        com.ibm.toad.cfparse.InterfaceList il = cf.getInterfaces();
         for (int i = 0; i < il.length(); i++) {
             interfaces.addElement(il.getInterfaceName(i));
         }
@@ -171,14 +168,14 @@ public class M6Class {
 
     private void resolveAttributes() {
         // not used here.
-        AttrInfoList al = cf.getAttrs();
+        com.ibm.toad.cfparse.attributes.AttrInfoList al = cf.getAttrs();
         for (int i = 0; i < al.length(); i++) {
             attributes.addElement(al.get(i));
         }
     }
 
     private void resolveFields() throws IOException {
-        FieldInfoList fl = cf.getFields();
+        com.ibm.toad.cfparse.FieldInfoList fl = cf.getFields();
         for (int i = 0; i < fl.length(); i++) {
             M6Field field = new M6Field(cf, fl.get(i));
             field.processField(constant_pool);
@@ -189,9 +186,9 @@ public class M6Class {
     private void resolveMethods(Target target) throws IOException {
         /* This attribute ensures we have relative tags for
          * branches, rather than byte offsets */
-        CodeAttrInfo.setViewer(MutableCodeSegment.getViewer());
+        com.ibm.toad.cfparse.attributes.CodeAttrInfo.setViewer(com.ibm.toad.cfparse.instruction.MutableCodeSegment.getViewer());
 
-        MethodInfoList ml = cf.getMethods();
+        com.ibm.toad.cfparse.MethodInfoList ml = cf.getMethods();
         for (int i = 0; i < ml.length(); i++) {
             M6Method meth = new M6Method(cf, ml.get(i));
             meth.processMethod(constant_pool, target);
@@ -234,12 +231,18 @@ public class M6Class {
             if (cp.get(i) instanceof Integer) {
                 buf.append("(INT " + cp.get(i) + ")");
             } else if (cp.get(i) instanceof String) {
+                String str = (String) cp.get(i);
                 switch (target) {
                     case M5:
-                        buf.append("(STRING (REF -1) \"" + cp.get(i) + "\")");
+                        buf.append("(STRING (REF -1) ; \"" + cp.get(i) + "\"\n");
+                        buf.append(pad).append("  ");
+                        for (int j = 0; j < str.length(); j++) {
+                            buf.append(" ").append((int) str.charAt(j));
+                        }
+                        buf.append(")");
                         break;
                     case M6:
-                        buf.append("(STRING  \"" + cp.get(i) + "\")");
+                        buf.append("(STRING  \"" + str + "\")");
                         break;
                 }
             } else if (cp.get(i) instanceof ClassRef) {
@@ -296,7 +299,7 @@ public class M6Class {
                 buf.append(pad + " '(");
                 for (int j = 0; j < fields.size(); j++) {
                     M6Field f = (M6Field) fields.get(j);
-                    if (Access.isStatic(f.getAccessFlags().f)) {
+                    if (com.ibm.toad.cfparse.utils.Access.isStatic(f.getAccessFlags().f)) {
                         continue;
                     }
                     buf.append("\n" + f.toString(lmargin + 20, target));
@@ -306,7 +309,7 @@ public class M6Class {
                 buf.append(pad + " '(");
                 for (int j = 0; j < fields.size(); j++) {
                     M6Field f = (M6Field) fields.get(j);
-                    if (!Access.isStatic(f.getAccessFlags().f)) {
+                    if (!com.ibm.toad.cfparse.utils.Access.isStatic(f.getAccessFlags().f)) {
                         continue;
                     }
                     buf.append("\n" + f.toString(lmargin + 20, target));
@@ -365,7 +368,7 @@ public class M6Class {
 
                 for (int i = 0; i < attributes.size(); i++) {
                     buf.append("\n" + pad + "          "
-                            + "(attribute \"" + ((AttrInfo) attributes.get(i)).getName() + "\")");
+                            + "(attribute \"" + ((com.ibm.toad.cfparse.attributes.AttrInfo) attributes.get(i)).getName() + "\")");
                 }
                 buf.append("))");
                 break;

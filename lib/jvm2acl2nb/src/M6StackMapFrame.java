@@ -1,7 +1,5 @@
 
 import java.io.*;
-import com.ibm.toad.cfparse.*;
-import com.ibm.toad.cfparse.instruction.*;
 
 public class M6StackMapFrame {
 
@@ -12,7 +10,7 @@ public class M6StackMapFrame {
     private M6StackMapType[] types_of_stack_items;
     private String flags;
 
-    public M6StackMapFrame(DataInputStream file, ConstantPool cp, ImmutableCodeSegment imc,
+    public M6StackMapFrame(DataInputStream file, com.ibm.toad.cfparse.ConstantPool cp, com.ibm.toad.cfparse.instruction.ImmutableCodeSegment imc,
             int FrameSize)
             throws IOException {
         //pc = imc.getInum(file.readUnsignedShort());

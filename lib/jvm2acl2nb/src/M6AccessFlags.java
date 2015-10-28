@@ -1,6 +1,4 @@
 
-import com.ibm.toad.cfparse.utils.Access;
-
 class M6AccessFlags {
 
     int f;
@@ -9,46 +7,46 @@ class M6AccessFlags {
     public M6AccessFlags(int f) {
         this.f = f;
         flags = new StringBuffer("(accessflags ");
-        if (Access.isAbstract(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isAbstract(f)) {
             flags.append(" *abstract* ");
         }
-        if (Access.isClass(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isClass(f)) {
             flags.append(" *class* ");
         }
-        if (Access.isFinal(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isFinal(f)) {
             flags.append(" *final* ");
         }
-        if (Access.isInterface(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isInterface(f)) {
             flags.append(" *interface* ");
         }
-        if (Access.isNative(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isNative(f)) {
             flags.append(" *native* ");
         }
-        if (Access.isPrivate(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isPrivate(f)) {
             flags.append(" *private* ");
         }
-        if (Access.isProtected(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isProtected(f)) {
             flags.append(" *protected* ");
         }
-        if (Access.isPublic(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isPublic(f)) {
             flags.append(" *public* ");
         }
-        if (Access.isStatic(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isStatic(f)) {
             flags.append(" *static* ");
         }
-        if (Access.isStrict(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isStrict(f)) {
             flags.append(" *strict* ");
         }
-        if (Access.isSuper(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isSuper(f)) {
             flags.append(" *super* ");
         }
-        if (Access.isSynchronized(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isSynchronized(f)) {
             flags.append(" *synchronized* ");
         }
-        if (Access.isTransient(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isTransient(f)) {
             flags.append(" *transient* ");
         }
-        if (Access.isVolatile(f)) {
+        if (com.ibm.toad.cfparse.utils.Access.isVolatile(f)) {
             flags.append(" *volatile* ");
         }
         flags.append(")");

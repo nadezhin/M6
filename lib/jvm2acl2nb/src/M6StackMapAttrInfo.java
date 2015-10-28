@@ -1,7 +1,4 @@
 
-import com.ibm.toad.cfparse.attributes.*;
-import com.ibm.toad.cfparse.*;
-import com.ibm.toad.cfparse.instruction.*;
 import java.io.*;
 
 public class M6StackMapAttrInfo {
@@ -11,8 +8,8 @@ public class M6StackMapAttrInfo {
     private byte[] bytes;
     private DataInputStream file;
 
-    public M6StackMapAttrInfo(AttrInfo unknown, ConstantPool cp, ImmutableCodeSegment imc, int fs) throws IOException {
-        bytes = ((UnknownAttrInfo) unknown).get();
+    public M6StackMapAttrInfo(com.ibm.toad.cfparse.attributes.AttrInfo unknown, com.ibm.toad.cfparse.ConstantPool cp, com.ibm.toad.cfparse.instruction.ImmutableCodeSegment imc, int fs) throws IOException {
+        bytes = ((com.ibm.toad.cfparse.attributes.UnknownAttrInfo) unknown).get();
         file = new DataInputStream(new ByteArrayInputStream(bytes));
 
         entryCount = file.readUnsignedShort();

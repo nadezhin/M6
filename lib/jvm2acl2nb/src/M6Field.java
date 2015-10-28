@@ -1,6 +1,4 @@
 
-import com.ibm.toad.cfparse.*;
-import com.ibm.toad.cfparse.attributes.*;
 import java.util.Vector;
 
 public class M6Field {
@@ -9,10 +7,10 @@ public class M6Field {
     private String desc;
     private String type;
     private M6AccessFlags accessflags;
-    private FieldInfo field;
+    private com.ibm.toad.cfparse.FieldInfo field;
     private int index; // index into the constant pool
 
-    public M6Field(ClassFile cp, FieldInfo f) {
+    public M6Field(com.ibm.toad.cfparse.ClassFile cp, com.ibm.toad.cfparse.FieldInfo f) {
         field = f;
         name = f.getName();
         desc = f.getDesc();
@@ -26,12 +24,12 @@ public class M6Field {
         // those string values.
 
         index = -1;
-        AttrInfoList al = field.getAttrs();
+        com.ibm.toad.cfparse.attributes.AttrInfoList al = field.getAttrs();
         if (al == null) {
             return;
         }
 
-        ConstantValueAttrInfo va = (ConstantValueAttrInfo) al.get("ConstantValue");
+        com.ibm.toad.cfparse.attributes.ConstantValueAttrInfo va = (com.ibm.toad.cfparse.attributes.ConstantValueAttrInfo) al.get("ConstantValue");
         if (va == null) {
             return;
         }
@@ -40,7 +38,7 @@ public class M6Field {
         System.out.println(va.get());
         String value = va.get();
 
-        if (entType == ConstantPool.CONSTANT_Integer) {
+        if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Integer) {
             Integer val = Integer.valueOf(value);
             if (cp.contains(val)) {
                 index = cp.indexOf(val);
@@ -48,7 +46,7 @@ public class M6Field {
                 cp.addElement(val);
                 index = cp.size() - 1;
             }
-        } else if (entType == ConstantPool.CONSTANT_Float) {
+        } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Float) {
             Float val = Float.valueOf(value);
             if (cp.contains(val)) {
                 index = cp.indexOf(val);
@@ -56,7 +54,7 @@ public class M6Field {
                 cp.addElement(val);
                 index = cp.size() - 1;
             }
-        } else if (entType == ConstantPool.CONSTANT_Double) {
+        } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Double) {
             Double val = Double.valueOf(value);
             if (cp.contains(val)) {
                 index = cp.indexOf(val);
@@ -64,7 +62,7 @@ public class M6Field {
                 cp.addElement(val);
                 index = cp.size() - 1;
             }
-        } else if (entType == ConstantPool.CONSTANT_Long) {
+        } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Long) {
             Long val = Long.valueOf(value);
             if (cp.contains(val)) {
                 index = cp.indexOf(val);
@@ -72,7 +70,7 @@ public class M6Field {
                 cp.addElement(val);
                 index = cp.size() - 1;
             }
-        } else if (entType == ConstantPool.CONSTANT_String) {
+        } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_String) {
             String val = value;
             if (cp.contains(val)) {
                 index = cp.indexOf(val);

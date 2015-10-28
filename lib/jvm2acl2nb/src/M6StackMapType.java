@@ -1,6 +1,5 @@
 
 import java.io.*;
-import com.ibm.toad.cfparse.*;
 
 public class M6StackMapType {
 
@@ -11,7 +10,7 @@ public class M6StackMapType {
                 "long", "null", "uninitializedThis", "cpindex",
                 "uninitilizedoffset", "returnaddress"};
 
-    public M6StackMapType(DataInputStream file, ConstantPool cp) throws IOException {
+    public M6StackMapType(DataInputStream file, com.ibm.toad.cfparse.ConstantPool cp) throws IOException {
         type = file.readByte();
 
         switch (type) {
