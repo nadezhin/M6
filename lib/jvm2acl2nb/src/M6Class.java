@@ -419,7 +419,7 @@ public class M6Class {
         name = cf0.getName();
         super_name = cf0.getSuperName();
 
-        is_interface = com.ibm.toad.cfparse.utils.Access.isInterface(cf0.getAccess());
+        is_interface = !cf.access_flags.is(AccessFlags.ACC_INTERFACE);
         lntdesc.append("(defconst *" + name + "-lnt*\n"
                 + "(list \n");
         lvtdesc.append("(defconst *" + name + "-lvt*\n"

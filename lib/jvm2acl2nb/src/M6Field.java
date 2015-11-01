@@ -1,4 +1,5 @@
 
+import com.sun.tools.classfile.Attribute;
 import com.sun.tools.classfile.Attributes;
 import com.sun.tools.classfile.ClassFile;
 import com.sun.tools.classfile.ConstantPool;
@@ -38,7 +39,7 @@ public class M6Field {
             return;
         }
 
-        ConstantValue_attribute va = (ConstantValue_attribute) al.get("ConstantValue");
+        ConstantValue_attribute va = (ConstantValue_attribute) al.get(Attribute.ConstantValue);
         if (va == null) {
             return;
         }

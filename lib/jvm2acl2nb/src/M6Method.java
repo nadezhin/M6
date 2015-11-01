@@ -4,6 +4,7 @@
  */
 
 import com.sun.tools.classfile.AccessFlags;
+import com.sun.tools.classfile.Attribute;
 import com.sun.tools.classfile.Attributes;
 import com.sun.tools.classfile.ClassFile;
 import com.sun.tools.classfile.Code_attribute;
@@ -469,7 +470,7 @@ public class M6Method {
         }
 
         com.ibm.toad.cfparse.attributes.CodeAttrInfo cai0 = (com.ibm.toad.cfparse.attributes.CodeAttrInfo) al0.get("Code");
-        Code_attribute cai = (Code_attribute) al.get("Code");
+        Code_attribute cai = (Code_attribute) al.get(Attribute.Code);
         assert (cai == null) == (cai0 == null);
         if (cai == null || no_method_body) {
             instructions = null;
@@ -563,7 +564,7 @@ public class M6Method {
 
             // get StackMap Attributes
             Attributes aal = cai.attributes;
-            StackMap_attribute sm = (StackMap_attribute) aal.get("StackMap");
+            StackMap_attribute sm = (StackMap_attribute) aal.get(Attribute.StackMap);
 
             if (sm != null) {
                 M6StackMapAttrInfo attr = new M6StackMapAttrInfo(sm, cf.constant_pool, max_locals);
@@ -573,8 +574,8 @@ public class M6Method {
             }
 
             // get LineNumberAttrInfo 
-            lnt = (LineNumberTable_attribute) aal.get("LineNumberTable");
-            lvt = (LocalVariableTable_attribute) aal.get("LocalVariableTable");
+            lnt = (LineNumberTable_attribute) aal.get(Attribute.LineNumberTable);
+            lvt = (LocalVariableTable_attribute) aal.get(Attribute.LocalVariableTable);
         }
         processed = true;
 
