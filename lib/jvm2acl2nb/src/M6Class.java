@@ -3,6 +3,7 @@
  * $Id: M6Class.java,v 1.6 2002/12/13 00:18:12 hbl Exp hbl $
  */
 
+import com.sun.tools.classfile.AccessFlags;
 import com.sun.tools.classfile.Attribute;
 import com.sun.tools.classfile.ClassFile;
 import com.sun.tools.classfile.ConstantPool;
@@ -91,16 +92,60 @@ public class M6Class {
     static class StringRef {
 
         final String value;
-        final String printString;
 
-        StringRef(String value, String printString) {
+        StringRef(String value) {
             this.value = value;
-            this.printString = printString;
         }
 
         @Override
         public String toString() {
-            return printString;
+            return toString(false);
+        }
+
+        public String toString(boolean asCFParse) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < value.length(); i++) {
+                char c = value.charAt(i);
+                switch (c) {
+                    case '\b':
+                        sb.append("\\b");
+                        break;
+                    case '\t':
+                        sb.append("\\t");
+                        break;
+                    case '\n':
+                        sb.append("\\n");
+                        break;
+                    case '\f':
+                        sb.append("\\f");
+                        break;
+                    case '\r':
+                        sb.append("\\r");
+                        break;
+                    case '"':
+                        sb.append("\\\"");
+                        break;
+                    case '\'':
+                        // Compatibility with the bug in CFParse
+                        sb.append(asCFParse ? "\\n" : "\\'");
+                        break;
+                    case '\\':
+                        sb.append("\\\\");
+                        break;
+                    default:
+                        if (c >= ' ' && c <= '~') {
+                            sb.append(c);
+                        } else {
+                            sb.append("\\u");
+                            String s = Integer.toHexString(c);
+                            for (int j = s.length(); j < 4; j++) {
+                                sb.append('0');
+                            }
+                            sb.append(s);
+                        }
+                }
+            }
+            return sb.toString();
         }
 
         @Override
@@ -368,7 +413,7 @@ public class M6Class {
      * This method processes the ClassFile given in the constructor. It is
      * necessary to call this method before querying this class.
      */
-    public void processClassFile(Target target) throws IOException, ConstantPoolException {
+    public void processClassFile(Target target) throws IOException, ConstantPoolException, DescriptorException {
         /* First, the name of the class itself */
 
         name = cf0.getName();
@@ -395,7 +440,7 @@ public class M6Class {
     }
 
     private void resolveAccessFlags() {
-        accessflags = new M6AccessFlags(cf0.getAccess());
+        accessflags = new M6AccessFlags(cf.access_flags);
     }
 
     private void resolveInterfaces() {
@@ -413,10 +458,11 @@ public class M6Class {
         }
     }
 
-    private void resolveFields() throws IOException {
-        com.ibm.toad.cfparse.FieldInfoList fl = cf0.getFields();
-        for (int i = 0; i < fl.length(); i++) {
-            M6Field field = new M6Field(cf0, cf, fl.get(i));
+    private void resolveFields() throws IOException, ConstantPoolException, DescriptorException {
+        com.ibm.toad.cfparse.FieldInfoList fl0 = cf0.getFields();
+        Field[] fl = cf.fields;
+        for (int i = 0; i < fl0.length(); i++) {
+            M6Field field = new M6Field(cf, fl[i]);
             field.processField(constant_pool);
             fields.addElement(field);
         }
@@ -429,7 +475,7 @@ public class M6Class {
 
         com.ibm.toad.cfparse.MethodInfoList ml = cf0.getMethods();
         for (int i = 0; i < ml.length(); i++) {
-            M6Method meth = new M6Method(cf0, cf, ml.get(i));
+            M6Method meth = new M6Method(cf0, cf, ml.get(i), cf.methods[i]);
             meth.processMethod(constant_pool, target);
             // constant_pool here is used for registering constant symbols.
             // when the class is loaded we assume those get into the heap? ;; hanbing
@@ -473,7 +519,7 @@ public class M6Class {
                 StringRef strRef = (StringRef) cp.get(i);
                 switch (target) {
                     case M5:
-                        buf.append("(STRING (REF -1) ; \"" + cp.get(i) + "\"\n");
+                        buf.append("(STRING (REF -1) ; \"" + strRef + "\"\n");
                         buf.append(pad).append("  ");
                         for (int j = 0; j < strRef.value.length(); j++) {
                             buf.append(" ").append((int) strRef.value.charAt(j));
@@ -481,7 +527,7 @@ public class M6Class {
                         buf.append(")");
                         break;
                     case M6:
-                        buf.append("(STRING  \"" + strRef.printString + "\")");
+                        buf.append("(STRING  \"" + strRef.toString(true) + "\")");
                         break;
                 }
             } else if (cp.get(i) instanceof ClassRef) {
@@ -538,7 +584,7 @@ public class M6Class {
                 buf.append(pad + " '(");
                 for (int j = 0; j < fields.size(); j++) {
                     M6Field f = (M6Field) fields.get(j);
-                    if (com.ibm.toad.cfparse.utils.Access.isStatic(f.getAccessFlags().f)) {
+                    if (f.field.access_flags.is(AccessFlags.ACC_STATIC)) {
                         continue;
                     }
                     buf.append("\n" + f.toString(lmargin + 20, target));
@@ -548,7 +594,7 @@ public class M6Class {
                 buf.append(pad + " '(");
                 for (int j = 0; j < fields.size(); j++) {
                     M6Field f = (M6Field) fields.get(j);
-                    if (!com.ibm.toad.cfparse.utils.Access.isStatic(f.getAccessFlags().f)) {
+                    if (!f.field.access_flags.is(AccessFlags.ACC_STATIC)) {
                         continue;
                     }
                     buf.append("\n" + f.toString(lmargin + 20, target));

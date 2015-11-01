@@ -1,5 +1,8 @@
 
-import java.io.*;
+import com.sun.tools.classfile.ConstantPool;
+import com.sun.tools.classfile.ConstantPoolException;
+import com.sun.tools.classfile.StackMapTable_attribute;
+import com.sun.tools.classfile.StackMap_attribute;
 
 public class M6StackMapFrame {
 
@@ -10,16 +13,17 @@ public class M6StackMapFrame {
     private M6StackMapType[] types_of_stack_items;
     private String flags;
 
-    public M6StackMapFrame(DataInputStream file, com.ibm.toad.cfparse.ConstantPool cp, com.ibm.toad.cfparse.instruction.ImmutableCodeSegment imc,
+    public M6StackMapFrame(StackMap_attribute.stack_map_frame smf,
+            ConstantPool cp,
             int FrameSize)
-            throws IOException {
-        //pc = imc.getInum(file.readUnsignedShort());
-        pc = file.readUnsignedShort();
-
-        num_locals = file.readUnsignedShort();
+            throws ConstantPoolException {
+        pc = smf.offset_delta;
+        num_locals = smf.number_of_locals;
         types_of_locals = new M6StackMapType[num_locals];
         for (int i = 0; i < num_locals; i++) {
-            types_of_locals[i] = new M6StackMapType(file, cp);
+            StackMapTable_attribute.verification_type_info type_info
+                    = (StackMapTable_attribute.verification_type_info) smf.locals[i];
+            types_of_locals[i] = new M6StackMapType(type_info, cp);
         }
 
         flags = stackFrameDefaultFlags(types_of_locals);
@@ -28,10 +32,12 @@ public class M6StackMapFrame {
         types_of_locals = ACL2utils.expandToLength(types_of_locals, FrameSize);
         num_locals = FrameSize;
 
-        num_stack_items = file.readUnsignedShort();
+        num_stack_items = smf.number_of_stack_items;
         types_of_stack_items = new M6StackMapType[num_stack_items];
         for (int i = 0; i < num_stack_items; i++) {
-            types_of_stack_items[i] = new M6StackMapType(file, cp);
+            StackMapTable_attribute.verification_type_info type_info
+                    = (StackMapTable_attribute.verification_type_info) smf.stack[i];
+            types_of_stack_items[i] = new M6StackMapType(type_info, cp);
         };
 
         types_of_stack_items = ACL2utils.expandTypeList(types_of_stack_items);

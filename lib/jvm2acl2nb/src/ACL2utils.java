@@ -5,6 +5,46 @@ public class ACL2utils {
 
     public static final boolean NAME_AND_TYPE = true;
 
+    public static String ClassInfoToACL2TypeStr(String descriptor) {
+        //jst do simple changes
+        // 1. enclose class name with " ", change into (class "<classname>") form
+        // 2. change <anystr>[] into (array trans(<anystr>))
+
+        switch (descriptor.charAt(0)) {
+            case '[':
+                return "(array " + ClassInfoToACL2TypeStr(descriptor.substring(1)) + ")";
+            case 'Z':
+                assert descriptor.length() == 1;
+                return "boolean";
+            case 'B':
+                assert descriptor.length() == 1;
+                return "byte";
+            case 'C':
+                assert descriptor.length() == 1;
+                return "char";
+            case 'S':
+                assert descriptor.length() == 1;
+                return "short";
+            case 'I':
+                assert descriptor.length() == 1;
+                return "int";
+            case 'J':
+                assert descriptor.length() == 1;
+                return "long";
+            case 'F':
+                assert descriptor.length() == 1;
+                return "float";
+            case 'D':
+                assert descriptor.length() == 1;
+                return "double";
+            case 'L':
+                assert descriptor.endsWith(";");
+                return ClassInfoToACL2TypeStr(descriptor.substring(1, descriptor.length() - 1));
+            default:
+                return "(class \"" + descriptor.replace('/', '.') + "\")";
+        }
+    }
+
     public static String JavaTypeStrToACL2TypeStr(String jtype) {
         //jst do simple changes
         // 1. enclose class name with " ", change into (class "<classname>") form

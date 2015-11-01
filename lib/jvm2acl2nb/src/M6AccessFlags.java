@@ -1,52 +1,53 @@
 
+import com.sun.tools.classfile.AccessFlags;
+
 class M6AccessFlags {
 
-    int f;
     StringBuffer flags = null;
 
-    public M6AccessFlags(int f) {
-        this.f = f;
+    public M6AccessFlags(AccessFlags af) {
         flags = new StringBuffer("(accessflags ");
-        if (com.ibm.toad.cfparse.utils.Access.isAbstract(f)) {
+        if (af.is(AccessFlags.ACC_ABSTRACT)) {
             flags.append(" *abstract* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isClass(f)) {
+        if (!af.is(AccessFlags.ACC_INTERFACE)) {
             flags.append(" *class* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isFinal(f)) {
+        if (af.is(AccessFlags.ACC_FINAL)) {
             flags.append(" *final* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isInterface(f)) {
+        if (af.is(AccessFlags.ACC_INTERFACE)) {
             flags.append(" *interface* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isNative(f)) {
+        if (af.is(AccessFlags.ACC_NATIVE)) {
             flags.append(" *native* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isPrivate(f)) {
+        if (af.is(AccessFlags.ACC_PRIVATE)) {
             flags.append(" *private* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isProtected(f)) {
+        if (af.is(AccessFlags.ACC_PROTECTED)) {
             flags.append(" *protected* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isPublic(f)) {
+        if (af.is(AccessFlags.ACC_PUBLIC)) {
             flags.append(" *public* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isStatic(f)) {
+        if (af.is(AccessFlags.ACC_STATIC)) {
             flags.append(" *static* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isStrict(f)) {
+        if (af.is(AccessFlags.ACC_STRICT)) {
             flags.append(" *strict* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isSuper(f)) {
+        // super and synchronized are the same bit
+        if (af.is(AccessFlags.ACC_SUPER)) {
             flags.append(" *super* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isSynchronized(f)) {
+        if (af.is(AccessFlags.ACC_SYNCHRONIZED)) {
             flags.append(" *synchronized* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isTransient(f)) {
+        if (af.is(AccessFlags.ACC_TRANSIENT)) {
             flags.append(" *transient* ");
         }
-        if (com.ibm.toad.cfparse.utils.Access.isVolatile(f)) {
+        if (af.is(AccessFlags.ACC_VOLATILE)) {
             flags.append(" *volatile* ");
         }
         flags.append(")");
@@ -54,7 +55,7 @@ class M6AccessFlags {
     }
 
     public String toString(int lmargin) {
-        StringBuffer padb = new StringBuffer();
+        StringBuilder padb = new StringBuilder();
         for (int i = 0; i < lmargin; i++) {
             padb.append(" ");
         }

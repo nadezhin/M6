@@ -1,4 +1,9 @@
 
+import com.sun.tools.classfile.Code_attribute;
+import com.sun.tools.classfile.ConstantPool;
+import com.sun.tools.classfile.ConstantPoolException;
+
+
 public class M6ExceptionHandler {
 
     private int start_pc;
@@ -6,15 +11,11 @@ public class M6ExceptionHandler {
     private int handler_pc;
     private String type;
 
-    public M6ExceptionHandler(com.ibm.toad.cfparse.attributes.CodeAttrInfo.ExceptionInfo n, com.ibm.toad.cfparse.instruction.ImmutableCodeSegment imc) {
-        start_pc = n.getStart();
-        end_pc = n.getEnd();
-        handler_pc = n.getHandler();
-
-        String tmp = n.getCatchType();
-        if (tmp.equals("all")) {
-            tmp = "java.lang.Throwable";
-        }
+    public M6ExceptionHandler(Code_attribute.Exception_data n, ConstantPool cp) throws ConstantPoolException {
+        start_pc = n.start_pc;
+        end_pc = n.end_pc;
+        handler_pc = n.handler_pc;
+        String tmp = n.catch_type != 0 ? cp.getClassInfo(n.catch_type).getName().replace('/','.') : "java.lang.Throwable";
         type = ACL2utils.JavaTypeStrToACL2TypeStr(tmp);
     }
 

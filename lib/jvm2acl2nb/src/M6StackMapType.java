@@ -1,5 +1,7 @@
 
-import java.io.*;
+import com.sun.tools.classfile.ConstantPool;
+import com.sun.tools.classfile.ConstantPoolException;
+import com.sun.tools.classfile.StackMapTable_attribute;
 
 public class M6StackMapType {
 
@@ -10,8 +12,9 @@ public class M6StackMapType {
                 "long", "null", "uninitializedThis", "cpindex",
                 "uninitilizedoffset", "returnaddress"};
 
-    public M6StackMapType(DataInputStream file, com.ibm.toad.cfparse.ConstantPool cp) throws IOException {
-        type = file.readByte();
+    public M6StackMapType(StackMapTable_attribute.verification_type_info typeInfo, ConstantPool cp)
+            throws ConstantPoolException {
+        type = (byte) typeInfo.tag;
 
         switch (type) {
             case 0:
@@ -24,21 +27,25 @@ public class M6StackMapType {
                 type_name = type_names[type];
                 break;
             case 7: {
-                int index;
-                index = file.readUnsignedShort(); // always assume bytecode length is less than 65536
-                type_name = ACL2utils.JavaTypeStrToACL2TypeStr(cp.getAsJava(index));
+                StackMapTable_attribute.Object_variable_info typeInfoObject
+                        = (StackMapTable_attribute.Object_variable_info) typeInfo;
+                int index = typeInfoObject.cpool_index;
+                ConstantPool.CONSTANT_Class_info info = cp.getClassInfo(index);
+                type_name = ACL2utils.ClassInfoToACL2TypeStr(info.getName());
             }
             break;
             case 8: {
-                int offset;
-                offset = file.readUnsignedShort();
+                StackMapTable_attribute.Uninitialized_variable_info typeInfoUninitialized
+                        = (StackMapTable_attribute.Uninitialized_variable_info) typeInfo;
+                int offset = typeInfoUninitialized.offset;
                 type_name = "(uninitialized " + offset + ")";
             }
             break;
             case 9: {
-                int offset;
-                offset = file.readUnsignedShort();
-                type_name = "(returnAddress " + offset + ")";
+                assert false;
+//                int offset;
+//                offset = file.readUnsignedShort();
+//                type_name = "(returnAddress " + offset + ")";
             }
             break;
             default:

@@ -1,22 +1,21 @@
 
-import java.io.*;
+import com.sun.tools.classfile.ConstantPool;
+import com.sun.tools.classfile.ConstantPoolException;
+import com.sun.tools.classfile.StackMap_attribute;
 
 public class M6StackMapAttrInfo {
 
     private int entryCount;
     private M6StackMapFrame[] maps;
-    private byte[] bytes;
-    private DataInputStream file;
 
-    public M6StackMapAttrInfo(com.ibm.toad.cfparse.attributes.AttrInfo unknown, com.ibm.toad.cfparse.ConstantPool cp, com.ibm.toad.cfparse.instruction.ImmutableCodeSegment imc, int fs) throws IOException {
-        bytes = ((com.ibm.toad.cfparse.attributes.UnknownAttrInfo) unknown).get();
-        file = new DataInputStream(new ByteArrayInputStream(bytes));
+    public M6StackMapAttrInfo(StackMap_attribute sm, ConstantPool cp, int fs) throws ConstantPoolException {
 
-        entryCount = file.readUnsignedShort();
+        entryCount = sm.number_of_entries;
         maps = new M6StackMapFrame[entryCount];
 
         for (int i = 0; i < entryCount; i++) {
-            maps[i] = new M6StackMapFrame(file, cp, imc, fs);
+            StackMap_attribute.stack_map_frame smf = (StackMap_attribute.stack_map_frame) sm.entries[i];
+            maps[i] = new M6StackMapFrame(smf, cp, fs);
         }
     }
 

@@ -3,11 +3,23 @@
  * $Id: M6Method.java,v 1.12 2003/06/17 22:11:16 hbl Exp hbl $
  */
 
+import com.sun.tools.classfile.AccessFlags;
+import com.sun.tools.classfile.Attributes;
 import com.sun.tools.classfile.ClassFile;
+import com.sun.tools.classfile.Code_attribute;
 import com.sun.tools.classfile.ConstantPool;
 import com.sun.tools.classfile.ConstantPoolException;
-import java.util.*;
-import java.io.*;
+import com.sun.tools.classfile.Instruction;
+import com.sun.tools.classfile.LineNumberTable_attribute;
+import com.sun.tools.classfile.LocalVariableTable_attribute;
+import com.sun.tools.classfile.Method;
+import com.sun.tools.classfile.StackMap_attribute;
+import java.util.Arrays;
+import java.util.Enumeration;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.StringTokenizer;
+import java.util.Vector;
 
 /**
  * M6Method represents a Java method in a way that allows for easy conversion to
@@ -29,7 +41,8 @@ import java.io.*;
  */
 public class M6Method {
 
-    private com.ibm.toad.cfparse.MethodInfo m;
+    private com.ibm.toad.cfparse.MethodInfo m0;
+    private Method m;
     private com.ibm.toad.cfparse.ClassFile cf0;
     private ClassFile cf;
 
@@ -45,8 +58,8 @@ public class M6Method {
     private int code_length;
     private M6ExceptionHandler[] handlers;
     private M6StackMapAttrInfo stackmaps;
-    private com.ibm.toad.cfparse.attributes.LineNumberAttrInfo lnt;
-    private com.ibm.toad.cfparse.attributes.LocalVariableAttrInfo lvt;
+    private LineNumberTable_attribute lnt;
+    private LocalVariableTable_attribute lvt;
 
     private Vector instructions;
     private Vector m6instructions;
@@ -69,10 +82,11 @@ public class M6Method {
      * @param c	The ClassFile representing the class
      * @param mi	The MethodInfo structure representing the method to analyze.
      */
-    public M6Method(com.ibm.toad.cfparse.ClassFile c0, ClassFile c, com.ibm.toad.cfparse.MethodInfo mi) {
+    public M6Method(com.ibm.toad.cfparse.ClassFile c0, ClassFile c, com.ibm.toad.cfparse.MethodInfo mi, Method m) {
         cf0 = c0;
         cf = c;
-        m = mi;
+        m0 = mi;
+        this.m = m;
         params = new Vector();
         instructions = new Vector();
         m6instructions = new Vector();
@@ -180,9 +194,9 @@ public class M6Method {
         buf.append("      (returntype . " + returntype + "))\n");
         buf.append("(");
         if (lnt != null) {
-            int len = lnt.length();
+            int len = lnt.line_number_table_length;
             for (int i = 0; i < len; i++) {
-                buf.append("(" + lnt.getStartPC(i) + " . " + lnt.getLineNumber(i) + ")\n");
+                buf.append("(" + lnt.line_number_table[i].start_pc + " . " + lnt.line_number_table[i].line_number + ")\n");
             }
         }
         buf.append(")");
@@ -190,9 +204,9 @@ public class M6Method {
         return buf.toString();
     }
 
-    public String printLocalVariableTable() {
+    public String printLocalVariableTable() throws ConstantPoolException {
         StringBuffer buf = new StringBuffer();
-        buf.append("((\"" + cf0.getName() + "\" \"" + name + "\"");
+        buf.append("((\"" + cf.getName() + "\" \"" + name + "\"");
         buf.append("\n  (");
 
         for (int i = 0; i < params.size(); i++) {
@@ -205,7 +219,7 @@ public class M6Method {
         buf.append("      (returntype . " + returntype + "))\n");
         buf.append("(");
         if (lvt != null) {
-            int len = lvt.length();
+            int len = lvt.local_variable_table_length;
             for (int i = 0; i < len; i++) {
                 printLocalVariableEntry(buf, i);
             }
@@ -215,14 +229,21 @@ public class M6Method {
         return buf.toString();
     }
 
-    private StringBuffer printLocalVariableEntry(StringBuffer buf, int i) {
+    private StringBuffer printLocalVariableEntry(StringBuffer buf, int i) throws ConstantPoolException {
         if (lvt != null) {
-            int len = lvt.length();
+            int len = lvt.local_variable_table_length;
             if (i >= 0 && i < len) {
-                buf.append("(" + lvt.getStartPC(i)
-                        + " " + lvt.getEndPC(i)
-                        + " " + lvt.getVarName(i)
-                        + " " + ACL2utils.JavaTypeStrToACL2TypeStr(lvt.getVarType(i)) + ")\n");
+                LocalVariableTable_attribute.Entry entry = lvt.local_variable_table[i];
+                int start_pc = entry.start_pc;
+                int length = entry.length;
+                int name_index = entry.name_index;
+                int descriptor_index = entry.descriptor_index;
+                String name = cf.constant_pool.getUTF8Value(name_index);
+                String desc = cf.constant_pool.getUTF8Value(descriptor_index);
+                buf.append("(" + start_pc
+                        + " " + (start_pc + length)
+                        + " " + name
+                        + " " + ACL2utils.ClassInfoToACL2TypeStr(desc) + ")\n");
             }
         }
         return buf;
@@ -277,7 +298,7 @@ public class M6Method {
         switch (target) {
             case M5:
                 buf.append(") ");
-                buf.append((com.ibm.toad.cfparse.utils.Access.isSynchronized(m.getAccess()) ? "t" : "nil") + "\n");
+                buf.append((m.access_flags.is(AccessFlags.ACC_SYNCHRONIZED) ? "t" : "nil") + "\n");
                 break;
             case M6:
                 buf.append(")\n");
@@ -390,16 +411,16 @@ public class M6Method {
      * representing the outer class from which this method is taken from.
      * @param target Target JVM model
      */
-    public void processMethod(Vector constant_pool, Target target) throws IOException, ConstantPoolException {
+    public void processMethod(List constant_pool, Target target) throws ConstantPoolException {
         /* The name of the method */
-        name = m.getName();
+        name = m0.getName();
         if (debug) {
             System.out.println("\nProcessing method: " + name);
         }
 
         /* We parse in the parameters into a Vector insert "top" if necessary. if necessary. */
-        desc = m.getDesc();
-        String[] ps = m.getParams();
+        desc = m0.getDesc();
+        String[] ps = m0.getParams();
         for (int i = 0; i < ps.length; i++) {
             String curtype = ps[i];
             params.addElement(ACL2utils.JavaTypeStrToACL2TypeStr(curtype));
@@ -408,7 +429,7 @@ public class M6Method {
             System.out.println("Parameters: " + params);
         }
         /* store the return type */
-        returntype = ACL2utils.JavaTypeStrToACL2TypeStr(m.getReturnType()); // hanbing
+        returntype = ACL2utils.JavaTypeStrToACL2TypeStr(m0.getReturnType()); // hanbing
 
       // we need to parse the Descriptor to get types, instead of using Java
         // String representation
@@ -435,22 +456,26 @@ public class M6Method {
 
          */
         // Changed to make use of the M6AccessFlags 
-        accessflags = new M6AccessFlags(m.getAccess());
+        accessflags = new M6AccessFlags(m.access_flags);
 
         /* Process the code attribute */
-        com.ibm.toad.cfparse.attributes.AttrInfoList al = m.getAttrs();
-        if (al == null) {
+        com.ibm.toad.cfparse.attributes.AttrInfoList al0 = m0.getAttrs();
+        Attributes al = m.attributes;
+        assert al0.length() == al.size();
+        if (al0 == null) {
             instructions = null;
             return;  /* abstract method--no instructions */
 
         }
 
-        com.ibm.toad.cfparse.attributes.CodeAttrInfo cai = (com.ibm.toad.cfparse.attributes.CodeAttrInfo) al.get("Code");
+        com.ibm.toad.cfparse.attributes.CodeAttrInfo cai0 = (com.ibm.toad.cfparse.attributes.CodeAttrInfo) al0.get("Code");
+        Code_attribute cai = (Code_attribute) al.get("Code");
+        assert (cai == null) == (cai0 == null);
         if (cai == null || no_method_body) {
             instructions = null;
             switch (target) {
                 case M5:
-                    if (com.ibm.toad.cfparse.utils.Access.isNative(m.getAccess())) {
+                    if (m.access_flags.is(AccessFlags.ACC_NATIVE)) {
                         m6instructions.addElement("NIL ; native method");
                     }
                     break;
@@ -458,30 +483,40 @@ public class M6Method {
                     break;
             }
         } else {
-            com.ibm.toad.cfparse.instruction.MutableCodeSegment mc = new com.ibm.toad.cfparse.instruction.MutableCodeSegment(cf0.getCP(), cai, true);
+            assert cai0.getMaxStack() == cai.max_stack;
+            assert cai0.getMaxLocals() == cai.max_locals;
+            assert Arrays.equals(cai0.getCode(), cai.code);
+            assert cai0.getExceptions().length == cai.exception_table_length;
+            assert cai0.getAttrs().length() == cai.attributes.size();
+
+            com.ibm.toad.cfparse.instruction.MutableCodeSegment mc = new com.ibm.toad.cfparse.instruction.MutableCodeSegment(cf0.getCP(), cai0, true);
             mc.setInstructionFactory(new com.ibm.toad.cfparse.instruction.StringInstructionFactory());
             com.ibm.toad.cfparse.instruction.MutableCodeIterator mci = new com.ibm.toad.cfparse.instruction.MutableCodeIterator(mc);
             /* mci is an iterator that gives access to the instructions */
 
             int offset = 0;
-            com.ibm.toad.cfparse.instruction.ImmutableCodeSegment imc = new com.ibm.toad.cfparse.instruction.ImmutableCodeSegment(cai.getCode());
+            com.ibm.toad.cfparse.instruction.ImmutableCodeSegment imc = new com.ibm.toad.cfparse.instruction.ImmutableCodeSegment(cai0.getCode());
             // ImmutableCodeIterator imci = new ImmutableCodeIterator(imc);
             // get the parsed code part
 
             // System.out.println("number of instructions" + mci.length() + " " + imc.getNumInstructions());
             // System.out.println("CodeSize" + cai.getCode().length + " " + " " + imc.getOffset(imc.getNumInstructions()-1));
             while (mci.hasNext()) {
-                com.ibm.toad.cfparse.instruction.BaseInstruction inst = (com.ibm.toad.cfparse.instruction.BaseInstruction) mci.next();
+                com.ibm.toad.cfparse.instruction.BaseInstruction inst0 = (com.ibm.toad.cfparse.instruction.BaseInstruction) mci.next();
                 //     System.out.println("\n"+idx+inst.toString());
-                if (inst.toString().startsWith("line_number")) {
-                    m6instructions.addElement("; " + inst.toString().trim());
+                if (inst0.toString().startsWith("line_number")) {
+                    m6instructions.addElement("; " + inst0.toString().trim());
                     continue;
                 }
 
-                String resultStr = parseInst(inst, cf0, cf, constant_pool, offset, target);
+                Instruction inst = new Instruction(cai.code, offset);
+                assert inst0.getOpCode()
+                        == (inst.getOpcode().opcode >= 0x100 ? (inst.getOpcode().opcode) >> 8 : inst.getOpcode().opcode);
+                assert inst0.getLength(offset) == inst.length();
+                String resultStr = parseInst(inst0, inst, cf, constant_pool, offset, target);
                 if (resultStr != null) {
                     m6instructions.addElement(resultStr);
-                    offset = offset + inst.getLength(offset);
+                    offset = offset + inst0.getLength(offset);
 
                 }
             }
@@ -496,15 +531,15 @@ public class M6Method {
             }
 
             // get the max_stack, in # slot
-            max_stack = cai.getMaxStack();
+            max_stack = cai0.getMaxStack();
 
             // get the max_locals
-            max_locals = cai.getMaxLocals();
+            max_locals = cai0.getMaxLocals();
 
             // get the code_length in number of instructions. -- changed feb 17 hanbing
             // now in number of bytes -- the length of byte array. 
             // instructions like tableswitch need padding.
-            code_length = cai.getCode().length; // in bytes -- feb 17 
+            code_length = cai0.getCode().length; // in bytes -- feb 17 
 
             // add an end marker to the code.
             switch (target) {
@@ -516,31 +551,30 @@ public class M6Method {
             }
 
             // get handlers correctly.
-            com.ibm.toad.cfparse.attributes.CodeAttrInfo.ExceptionInfo[] exceptions = cai.getExceptions();
-            int ecount = cai.getNumExceptions();
+            int ecount = cai.exception_table_length;
 
             if (ecount > 0) {
                 handlers = new M6ExceptionHandler[ecount];
                 for (int i = 0; i < ecount; i++) {
-                    M6ExceptionHandler h = new M6ExceptionHandler(exceptions[i], imc);
+                    M6ExceptionHandler h = new M6ExceptionHandler(cai.exception_table[i], cf.constant_pool);
                     handlers[i] = h;
                 }
             }
 
             // get StackMap Attributes
-            com.ibm.toad.cfparse.attributes.AttrInfoList aal = cai.getAttrs();
-            com.ibm.toad.cfparse.attributes.AttrInfo sm = getStackMapAttrInfo(aal);
+            Attributes aal = cai.attributes;
+            StackMap_attribute sm = (StackMap_attribute) aal.get("StackMap");
 
             if (sm != null) {
-                M6StackMapAttrInfo attr = new M6StackMapAttrInfo(sm, cf0.getCP(), imc, max_locals);
+                M6StackMapAttrInfo attr = new M6StackMapAttrInfo(sm, cf.constant_pool, max_locals);
                 stackmaps = attr;
             } else {
                 stackmaps = null;
             }
 
             // get LineNumberAttrInfo 
-            lnt = getLineNumberAttrInfo(aal);
-            lvt = getLocalVariableAttrInfo(aal);
+            lnt = (LineNumberTable_attribute) aal.get("LineNumberTable");
+            lvt = (LocalVariableTable_attribute) aal.get("LocalVariableTable");
         }
         processed = true;
 
@@ -548,27 +582,6 @@ public class M6Method {
             lntStr = printLineNumberTable();
             lvtStr = printLocalVariableTable();
         }
-    }
-
-    private static com.ibm.toad.cfparse.attributes.LineNumberAttrInfo getLineNumberAttrInfo(com.ibm.toad.cfparse.attributes.AttrInfoList al) {
-        if (al == null) {
-            return null;
-        }
-        return (com.ibm.toad.cfparse.attributes.LineNumberAttrInfo) (com.ibm.toad.cfparse.utils.AttrUtils.getAttrByName(al, "LineNumberTable"));
-    }
-
-    private static com.ibm.toad.cfparse.attributes.LocalVariableAttrInfo getLocalVariableAttrInfo(com.ibm.toad.cfparse.attributes.AttrInfoList al) {
-        if (al == null) {
-            return null;
-        }
-        return (com.ibm.toad.cfparse.attributes.LocalVariableAttrInfo) (com.ibm.toad.cfparse.utils.AttrUtils.getAttrByName(al, "LocalVariableTable"));
-    }
-
-    private static com.ibm.toad.cfparse.attributes.AttrInfo getStackMapAttrInfo(com.ibm.toad.cfparse.attributes.AttrInfoList al) {
-        if (al == null) {
-            return null;
-        }
-        return com.ibm.toad.cfparse.utils.AttrUtils.getAttrByName(al, "StackMap");
     }
 
     private static String makeClassCP(String jtype, Target target) {
@@ -617,36 +630,35 @@ public class M6Method {
         return buf.toString();
     }
 
-    private String parseInst(com.ibm.toad.cfparse.instruction.BaseInstruction inst,
-            com.ibm.toad.cfparse.ClassFile cf0,
+    private String parseInst(com.ibm.toad.cfparse.instruction.BaseInstruction inst0,
+            Instruction inst,
             ClassFile cf,
-            Vector constant_pool,
+            List constant_pool,
             int offset,
             Target targetModel) throws ConstantPoolException {
         StringBuffer tmp = new StringBuffer();
         StringBuffer tmp2 = new StringBuffer();
         StringBuffer buf = new StringBuffer();
         StringTokenizer tok;
-        com.ibm.toad.cfparse.ConstantPoolEntry ent;
-        int entType;
         ConstantPool.CPInfo info;
+        int tag;
 
-        System.out.println(inst.toString());
+        System.out.println(inst0.toString());
 
         switch (targetModel) {
             case M5:
                 tmp.append("(");
-                if (inst.getTag() != null) {
-                    tmp.append("LABEL::").append(inst.getTag()).append(" ");
-                    tagTable.put(inst.getTag(), new Integer(offset));
-                    tmp2.append(";;at " + inst.getTag());
+                if (inst0.getTag() != null) {
+                    tmp.append("LABEL::").append(inst0.getTag()).append(" ");
+                    tagTable.put(inst0.getTag(), new Integer(offset));
+                    tmp2.append(";;at " + inst0.getTag());
                 }
                 break;
             case M6:
                 tmp.append("(" + offset + " (");
-                if (inst.getTag() != null) {
-                    tagTable.put(inst.getTag(), new Integer(offset));
-                    tmp2.append(";;at " + inst.getTag());
+                if (inst0.getTag() != null) {
+                    tagTable.put(inst0.getTag(), new Integer(offset));
+                    tmp2.append(";;at " + inst0.getTag());
                 }
                 break;
         }
@@ -658,8 +670,8 @@ public class M6Method {
         // here George chose not to explictly list all OPCODE, 
         // because if the inst is one byte, inst.toString() 
         // suffice
-        if (inst.getLength(offset) == 1) {
-            tmp.append(inst.toString().trim());
+        if (inst0.getLength(offset) == 1) {
+            tmp.append(inst0.toString().trim());
             switch (targetModel) {
                 case M5:
                     tmp.append(")");
@@ -669,10 +681,10 @@ public class M6Method {
                     break;
             }
         } else {
-            int opCode = inst.getOpCode();
+            int opCode = inst0.getOpCode();
             boolean isWide = opCode == com.ibm.toad.cfparse.instruction.JVMConstants.WIDE;
             if (isWide) {
-                opCode = inst.getCode(null, 0)[1] & 0xFF;
+                opCode = inst0.getCode(null, 0)[1] & 0xFF;
                 if (opCode != com.ibm.toad.cfparse.instruction.JVMConstants.IINC
                         && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.ALOAD
                         && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.ASTORE
@@ -704,8 +716,8 @@ public class M6Method {
                 case com.ibm.toad.cfparse.instruction.JVMConstants.BIPUSH:
                 case com.ibm.toad.cfparse.instruction.JVMConstants.RET:
                 case com.ibm.toad.cfparse.instruction.JVMConstants.SIPUSH:
-                    buf.append(inst.toString().replace("wide ", "").trim());
-                    buf.deleteCharAt(inst.toString().trim().indexOf(" ") + 1);
+                    buf.append(inst0.toString().replace("wide ", "").trim());
+                    buf.deleteCharAt(inst0.toString().trim().indexOf(" ") + 1);
                     tmp.append(buf);
                     break;
 
@@ -714,7 +726,7 @@ public class M6Method {
                 case com.ibm.toad.cfparse.instruction.JVMConstants.ANEWARRAY:
                 case com.ibm.toad.cfparse.instruction.JVMConstants.NEW:
                 case com.ibm.toad.cfparse.instruction.JVMConstants.INSTANCEOF:
-                    tok = new StringTokenizer(inst.toString().trim());
+                    tok = new StringTokenizer(inst0.toString().trim());
                     buf.append(tok.nextToken());
                     String typeName = tok.nextToken();
                     buf.append(" " + makeClassCP(typeName, targetModel));
@@ -725,7 +737,7 @@ public class M6Method {
                  * (JVM::getfield (fieldCP "width" "java.awt.Dimention" (class "java.awt.Dimention.Model3D")) */
                 case com.ibm.toad.cfparse.instruction.JVMConstants.GETFIELD:
                 case com.ibm.toad.cfparse.instruction.JVMConstants.PUTFIELD:
-                    tok = new StringTokenizer(inst.toString().trim());
+                    tok = new StringTokenizer(inst0.toString().trim());
                     buf.append(tok.nextToken()); // the opcode
 
                     String fieldTypeName = tok.nextToken();             // throw away the data type
@@ -733,11 +745,13 @@ public class M6Method {
                     String fieldClassName = field.substring(0, field.lastIndexOf("."));
                     String fieldName = field.substring(field.lastIndexOf(".") + 1);
                     if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
-                        byte[] instCode = inst.getCode(null, 0);
+                        byte[] instCode = inst0.getCode(null, 0);
                         assert instCode.length == 3;
                         int fieldRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
-                        String fieldRef = cf0.getCP().getAsString(fieldRefOffs);
-                        fieldName += ":" + fieldRef.substring(fieldRef.lastIndexOf(' ') + 1);
+                        ConstantPool.CONSTANT_Fieldref_info infoFieldref
+                                = (ConstantPool.CONSTANT_Fieldref_info) cf.constant_pool.get(fieldRefOffs);
+                        String fieldType = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index).getType();
+                        fieldName += ":" + fieldType;
                     }
 
                     buf.append(" " + makeFieldCP(fieldName, fieldClassName, fieldTypeName, targetModel));
@@ -766,7 +780,7 @@ public class M6Method {
                 case com.ibm.toad.cfparse.instruction.JVMConstants.IFNULL:
                 case com.ibm.toad.cfparse.instruction.JVMConstants.JSR:
                 case com.ibm.toad.cfparse.instruction.JVMConstants.JSR_W:
-                    buf.append(inst.toString().trim());
+                    buf.append(inst0.toString().trim());
                     switch (targetModel) {
                         case M5:
                             buf.insert(buf.toString().indexOf(" ") + 1, "LABEL::");
@@ -781,7 +795,7 @@ public class M6Method {
                 /* newarray T_INT
                  * (JVM::newarray T_INT) */
                 case com.ibm.toad.cfparse.instruction.JVMConstants.NEWARRAY:
-                    String narray = inst.toString().trim();
+                    String narray = inst0.toString().trim();
                     tmp.append(narray.substring(0, narray.indexOf(" "))); // op-code
                     tmp.append(" " + narray.substring(narray.lastIndexOf("_") + 1));
                     break;
@@ -789,8 +803,8 @@ public class M6Method {
                 /* iinc v4 #1
                  * (JVM::iinc 4 1) */
                 case com.ibm.toad.cfparse.instruction.JVMConstants.IINC:
-                    buf.append(inst.toString().replace("wide ", "").trim());
-                    buf.deleteCharAt(inst.toString().trim().indexOf(" ") + 1);
+                    buf.append(inst0.toString().replace("wide ", "").trim());
+                    buf.deleteCharAt(inst0.toString().trim().indexOf(" ") + 1);
                     buf.deleteCharAt(buf.toString().lastIndexOf(" ") + 1);
                     tmp.append(buf);
                     break;
@@ -798,7 +812,7 @@ public class M6Method {
                 /* multianewarray java.lang.Object[][][] #3
                  * (JVM::multianewarray 3) */
                 case com.ibm.toad.cfparse.instruction.JVMConstants.MULTIANEWARRAY:
-                    tok = new StringTokenizer(inst.toString().trim());
+                    tok = new StringTokenizer(inst0.toString().trim());
                     buf.append(tok.nextToken()); // the opcode
                     String ArrayType = tok.nextToken();             // throw away the data type
                     buf.append(makeClassCP(ArrayType, targetModel));
@@ -814,18 +828,30 @@ public class M6Method {
                 case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKEVIRTUAL:
                 case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKESTATIC:
                 case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKESPECIAL:
-                    tok = new StringTokenizer(inst.toString().trim());
+                    tok = new StringTokenizer(inst0.toString().trim());
                     tmp.append(tok.nextToken()); // opcode
                     String MethodReturnType = tok.nextToken(); // throw away the return type
                     String Method = tok.nextToken("(");
                     String MethodClassName = Method.substring(0, Method.lastIndexOf(".")).trim();
                     String MethodName = Method.substring(Method.lastIndexOf(".") + 1).trim();
                     if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
-                        byte[] instCode = inst.getCode(null, 0);
+                        byte[] instCode = inst0.getCode(null, 0);
                         assert instCode.length == 3;
                         int methRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
-                        String methRef = cf0.getCP().getAsString(methRefOffs);
-                        MethodName += ":" + methRef.substring(methRef.indexOf('('));
+                        ConstantPool.CPInfo methRef = cf.constant_pool.get(methRefOffs);
+                        int name_and_type_index;
+                        switch (methRef.getTag()) {
+                            case ConstantPool.CONSTANT_Methodref:
+                                name_and_type_index = ((ConstantPool.CONSTANT_Methodref_info) methRef).name_and_type_index;
+                                break;
+                            case ConstantPool.CONSTANT_InterfaceMethodref:
+                                name_and_type_index = ((ConstantPool.CONSTANT_InterfaceMethodref_info) methRef).name_and_type_index;
+                                break;
+                            default:
+                                throw new AssertionError();
+                        }
+                        String methType = cf.constant_pool.getNameAndTypeInfo(name_and_type_index).getType();
+                        MethodName += ":" + methType;
                     }
                     Vector params = new Vector();
                     String rawparams = tok.nextToken("");
@@ -857,97 +883,87 @@ public class M6Method {
                 case com.ibm.toad.cfparse.instruction.JVMConstants.LDC_W:
                     if (opCode == com.ibm.toad.cfparse.instruction.JVMConstants.LDC) {
                         tmp.append("ldc ");
-                        byte cpidx1 = inst.getCode(null, 1)[1];
+                        byte cpidx1 = inst0.getCode(null, 1)[1];
                         int cpidx = (int) cpidx1 & 255;
-                        ent = cf0.getCP().get(cpidx);
-                        entType = cf0.getCP().getType(cpidx);
                         info = cf.constant_pool.get(cpidx);
+                        tag = info.getTag();
                     } else {
                         tmp.append("ldc_w ");
 
-                        int cpidx1 = (int) inst.getCode(null, 1)[1];
+                        int cpidx1 = (int) inst0.getCode(null, 1)[1];
                         cpidx1 = cpidx1 & 255;
-                        int cpidx2 = (int) inst.getCode(null, 1)[2];
+                        int cpidx2 = (int) inst0.getCode(null, 1)[2];
                         cpidx2 = cpidx2 & 255;
 
                         int ldc_idx = (cpidx1 << 8) | cpidx2;
-                        ent = cf0.getCP().get(ldc_idx);
-                        entType = cf0.getCP().getType(ldc_idx);
                         info = cf.constant_pool.get(ldc_idx);
+                        tag = info.getTag();
                     }
 
-                    if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Integer) {
+                    if (tag == ConstantPool.CONSTANT_Integer) {
 
-                        com.ibm.toad.cfparse.ConstantPool.IntegerEntry ient = (com.ibm.toad.cfparse.ConstantPool.IntegerEntry) ent;
-                        Integer val = new Integer(ient.getValue());
+                        Integer val = new Integer(((ConstantPool.CONSTANT_Integer_info) info).value);
 
                         if (constant_pool.contains(val)) {
                             tmp.append(constant_pool.indexOf(val));
                         } else {
-                            constant_pool.addElement(val);
+                            constant_pool.add(val);
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
                         tmp2.append(";;INT:: \"" + val + "\"");
-                    } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Float) {
+                    } else if (tag == ConstantPool.CONSTANT_Float) {
 
-                        com.ibm.toad.cfparse.ConstantPool.FloatEntry fent = (com.ibm.toad.cfparse.ConstantPool.FloatEntry) ent;
-                        Float val = new Float(fent.getValue());
+                        Float val = new Float(((ConstantPool.CONSTANT_Float_info) info).value);
 
                         if (constant_pool.contains(val)) {
                             tmp.append(constant_pool.indexOf(val));
                         } else {
-                            constant_pool.addElement(val);
+                            constant_pool.add(val);
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
                         tmp2.append(";;FLOAT:: \"" + val + "\"");
-                    } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Double) {
+                    } else if (tag == ConstantPool.CONSTANT_Double) {
 
-                        com.ibm.toad.cfparse.ConstantPool.DoubleEntry fent = (com.ibm.toad.cfparse.ConstantPool.DoubleEntry) ent;
-                        Double val = new Double(fent.getValue());
+                        Double val = new Double(((ConstantPool.CONSTANT_Double_info) info).value);
 
                         if (constant_pool.contains(val)) {
                             tmp.append(constant_pool.indexOf(val));
                         } else {
-                            constant_pool.addElement(val);
+                            constant_pool.add(val);
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
                         tmp2.append(";;Doulbe:: \"" + val + "\"");
-                    } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Long) {
+                    } else if (tag == ConstantPool.CONSTANT_Long) {
 
-                        com.ibm.toad.cfparse.ConstantPool.LongEntry fent = (com.ibm.toad.cfparse.ConstantPool.LongEntry) ent;
-                        Long val = new Long(fent.getValue());
+                        Long val = new Long(((ConstantPool.CONSTANT_Long_info) info).value);
 
                         if (constant_pool.contains(val)) {
                             tmp.append(constant_pool.indexOf(val));
                         } else {
-                            constant_pool.addElement(val);
+                            constant_pool.add(val);
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
                         tmp2.append(";;Long:: \"" + val + "\"");
-                    } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Class) {
-                        com.ibm.toad.cfparse.ConstantPool.ClassEntry cl_ent = (com.ibm.toad.cfparse.ConstantPool.ClassEntry) ent;
-                        M6Class.ClassRef val = new M6Class.ClassRef(cl_ent.getAsJava());
+                    } else if (tag == ConstantPool.CONSTANT_Class) {
+                        M6Class.ClassRef val = new M6Class.ClassRef(((ConstantPool.CONSTANT_Class_info) info).getName().replace('/', '.'));
 
                         if (constant_pool.contains(val)) {
                             tmp.append(constant_pool.indexOf(val));
                         } else {
-                            constant_pool.addElement(val);
+                            constant_pool.add(val);
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
                         tmp2.append(";;CLASS:: \"" + val + "\"");
                     } else {
-                        ConstantPool.CONSTANT_String_info s_info = (ConstantPool.CONSTANT_String_info) info;
-                        ConstantPool.CONSTANT_Utf8_info s_name = cf.constant_pool.getUTF8Info(s_info.string_index);
-                        com.ibm.toad.cfparse.ConstantPool.StringEntry s_ent = (com.ibm.toad.cfparse.ConstantPool.StringEntry) ent;
-                        M6Class.StringRef val = new M6Class.StringRef(s_name.value, s_ent.getAsString());
+                        M6Class.StringRef val = new M6Class.StringRef(((ConstantPool.CONSTANT_String_info) info).getString());
 
                         if (constant_pool.contains(val)) {
                             tmp.append(constant_pool.indexOf(val));
                         } else {
-                            constant_pool.addElement(val);
+                            constant_pool.add(val);
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
-                        tmp2.append(";;STRING:: \"" + val + "\"");
+                        tmp2.append(";;STRING:: \"" + val.toString(targetModel == Target.M6) + "\"");
                     }
                     break;
 
@@ -957,35 +973,33 @@ public class M6Method {
 
                     tmp.append("ldc2_w ");
 
-                    int cpidx1 = (int) inst.getCode(null, 1)[1];
+                    int cpidx1 = (int) inst0.getCode(null, 1)[1];
                     cpidx1 = cpidx1 & 255;
-                    int cpidx2 = (int) inst.getCode(null, 1)[2];
+                    int cpidx2 = (int) inst0.getCode(null, 1)[2];
                     cpidx2 = cpidx2 & 255;
 
                     int ldc_idx = (cpidx1 << 8) | cpidx2;
 
-                    ent = cf0.getCP().get(ldc_idx);
-                    entType = cf0.getCP().getType(ldc_idx);
+                    info = cf.constant_pool.get(ldc_idx);
+                    tag = info.getTag();
 
-                    if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Long) {
-                        com.ibm.toad.cfparse.ConstantPool.LongEntry lent = (com.ibm.toad.cfparse.ConstantPool.LongEntry) ent;
-                        Long val = new Long(lent.getValue());
+                    if (tag == ConstantPool.CONSTANT_Long) {
+                        Long val = new Long(((ConstantPool.CONSTANT_Long_info) info).value);
 
                         if (constant_pool.contains(val)) {
                             tmp.append(constant_pool.indexOf(val));
                         } else {
-                            constant_pool.addElement(val);
+                            constant_pool.add(val);
                             tmp.append(constant_pool.size() - 1);  // zero-based indices
                         }
                         tmp2.append(";; LONG:: \"" + val + "\"");
                     } else {
-                        com.ibm.toad.cfparse.ConstantPool.DoubleEntry dent = (com.ibm.toad.cfparse.ConstantPool.DoubleEntry) ent;
-                        Double val = new Double(dent.getValue());
+                        Double val = new Double(((ConstantPool.CONSTANT_Double_info) info).value);
 
                         if (constant_pool.contains(val)) {
                             tmp.append(constant_pool.indexOf(val));
                         } else {
-                            constant_pool.addElement(val);
+                            constant_pool.add(val);
                             tmp.append(constant_pool.size() - 1); // zero-based indices
                         }
                         tmp2.append(";; DOUBLE:: \"" + val + "\"");
@@ -1006,18 +1020,20 @@ public class M6Method {
                 /* (invokeinterface byte[] com.ibm.toad.cfparse.instruction.BaseInstruction.getCode(int[], int) #3 #0 )) */
                 /* (JVM::ldc2_w 3)  3 points to the LONG object 837462398 */
                 case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKEINTERFACE: {
-                    tok = new StringTokenizer(inst.toString().trim());
+                    tok = new StringTokenizer(inst0.toString().trim());
                     tmp.append(tok.nextToken()); // opcode
                     String iMethodReturnType = tok.nextToken();
                     String iMethod = tok.nextToken("(");
                     String iMethodClassName = iMethod.substring(0, iMethod.lastIndexOf(".")).trim();
                     String iMethodName = iMethod.substring(iMethod.lastIndexOf(".") + 1).trim();
                     if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
-                        byte[] iinstCode = inst.getCode(null, 0);
+                        byte[] iinstCode = inst0.getCode(null, 0);
                         assert iinstCode.length == 5;
                         int imethRefOffs = ((iinstCode[1] & 0xFF) << 8) | (iinstCode[2] & 0xFF);
-                        String imethRef = cf0.getCP().getAsString(imethRefOffs);
-                        iMethodName += ":" + imethRef.substring(imethRef.indexOf('('));
+                        ConstantPool.CONSTANT_InterfaceMethodref_info infoInterfaceMethodref
+                                = (ConstantPool.CONSTANT_InterfaceMethodref_info) cf.constant_pool.get(imethRefOffs);
+                        String imethType = cf.constant_pool.getNameAndTypeInfo(infoInterfaceMethodref.name_and_type_index).getType();
+                        iMethodName += ":" + imethType;
                     }
                     Vector iparams = new Vector();
                     String irawparams = tok.nextToken(")");
@@ -1049,7 +1065,7 @@ public class M6Method {
                 break;
 
                 case com.ibm.toad.cfparse.instruction.JVMConstants.CHECKCAST: {
-                    tok = new StringTokenizer(inst.toString().trim());
+                    tok = new StringTokenizer(inst0.toString().trim());
                     tmp.append(tok.nextToken());
                     String castType = tok.nextToken();
                     tmp.append(" " + ACL2utils.JavaTypeStrToACL2TypeStr(castType));
@@ -1058,7 +1074,7 @@ public class M6Method {
 
                 case com.ibm.toad.cfparse.instruction.JVMConstants.PUTSTATIC:
                 case com.ibm.toad.cfparse.instruction.JVMConstants.GETSTATIC: {
-                    tok = new StringTokenizer(inst.toString().trim());
+                    tok = new StringTokenizer(inst0.toString().trim());
                     buf.append(tok.nextToken()); // the opcode
 
                     String sfieldTypeName = tok.nextToken();             // throw away the data type
@@ -1066,11 +1082,13 @@ public class M6Method {
                     String sfieldClassName = sfield.substring(0, sfield.lastIndexOf("."));
                     String sfieldName = sfield.substring(sfield.lastIndexOf(".") + 1);
                     if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
-                        byte[] instCode = inst.getCode(null, 0);
+                        byte[] instCode = inst0.getCode(null, 0);
                         assert instCode.length == 3;
                         int sfieldRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
-                        String sfieldRef = cf0.getCP().getAsString(sfieldRefOffs);
-                        sfieldName += ":" + sfieldRef.substring(sfieldRef.lastIndexOf(' ') + 1);
+                        ConstantPool.CONSTANT_Fieldref_info infoFieldref
+                                = (ConstantPool.CONSTANT_Fieldref_info) cf.constant_pool.get(sfieldRefOffs);
+                        String sfieldType = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index).getType();
+                        sfieldName += ":" + sfieldType;
                     }
 
                     buf.append(" " + makeFieldCP(sfieldName, sfieldClassName, sfieldTypeName, targetModel));
@@ -1084,7 +1102,7 @@ public class M6Method {
                      * but have a execution model in ACL2 in mind. 
                      * I would chose to have a representation closer to the real JVM.  */
 
-                    tok = new StringTokenizer(inst.toString().trim());
+                    tok = new StringTokenizer(inst0.toString().trim());
                     tmp.append(tok.nextToken()); // the opcode
 
                     String defaultt = tok.nextToken().trim(); // the default target
@@ -1114,7 +1132,7 @@ public class M6Method {
                 break;
 
                 case com.ibm.toad.cfparse.instruction.JVMConstants.TABLESWITCH: {
-                    tok = new StringTokenizer(inst.toString().trim());
+                    tok = new StringTokenizer(inst0.toString().trim());
                     tmp.append(tok.nextToken()); // the opcode
 
                     String tabledefault = tok.nextToken().trim(); // the default target
@@ -1144,7 +1162,7 @@ public class M6Method {
                 }
                 break;
                 default:
-                    tmp.append("<unsupported> " + inst.toString());
+                    tmp.append("<unsupported> " + inst0.toString());
             }
 
             switch (targetModel) {

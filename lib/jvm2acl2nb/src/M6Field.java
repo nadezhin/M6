@@ -1,90 +1,106 @@
 
+import com.sun.tools.classfile.Attributes;
 import com.sun.tools.classfile.ClassFile;
-import java.util.Vector;
+import com.sun.tools.classfile.ConstantPool;
+import com.sun.tools.classfile.ConstantPoolException;
+import com.sun.tools.classfile.ConstantValue_attribute;
+import com.sun.tools.classfile.DescriptorException;
+import com.sun.tools.classfile.Field;
+import java.util.List;
 
 public class M6Field {
 
-    private String name;
-    private String desc;
-    private String type;
-    private M6AccessFlags accessflags;
-    private com.ibm.toad.cfparse.FieldInfo field;
+    private final String name;
+    private final String desc;
+    private final String type;
+    private final M6AccessFlags accessflags;
+    private final ClassFile cf;
+    final Field field;
     private int index; // index into the constant pool
 
-    public M6Field(com.ibm.toad.cfparse.ClassFile cp0, ClassFile cp, com.ibm.toad.cfparse.FieldInfo f) {
-        field = f;
-        name = f.getName();
-        desc = f.getDesc();
-        type = ACL2utils.JavaTypeStrToACL2TypeStr(f.getType());
-        accessflags = new M6AccessFlags(f.getAccess());
+    public M6Field(ClassFile cf, Field f) throws ConstantPoolException, DescriptorException {
+        this.cf = cf;
+        this.field = f;
+        name = f.getName(cf.constant_pool);
+        desc = f.descriptor.getValue(cf.constant_pool);
+        type = ACL2utils.JavaTypeStrToACL2TypeStr(f.descriptor.getFieldType(cf.constant_pool));
+        accessflags = new M6AccessFlags(f.access_flags);
         index = -1;
     }
 
-    public void processField(Vector cp) {
+    public void processField(List cp) throws ConstantPoolException {
         // need to add entries to constant_pool,
         // those string values.
 
         index = -1;
-        com.ibm.toad.cfparse.attributes.AttrInfoList al = field.getAttrs();
+        Attributes al = field.attributes;
         if (al == null) {
             return;
         }
 
-        com.ibm.toad.cfparse.attributes.ConstantValueAttrInfo va = (com.ibm.toad.cfparse.attributes.ConstantValueAttrInfo) al.get("ConstantValue");
+        ConstantValue_attribute va = (ConstantValue_attribute) al.get("ConstantValue");
         if (va == null) {
             return;
         }
 
-        int entType = va.getType();
-        System.out.println(va.get());
-        String value = va.get();
+        ConstantPool.CPInfo info = cf.constant_pool.get(va.constantvalue_index);
+        int tag = info.getTag();
 
-        if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Integer) {
-            Integer val = Integer.valueOf(value);
+        if (tag == ConstantPool.CONSTANT_Integer) {
+            ConstantPool.CONSTANT_Integer_info infoInteger = (ConstantPool.CONSTANT_Integer_info) info;
+            Integer val = Integer.valueOf(infoInteger.value);
+            System.out.println(val);
             if (cp.contains(val)) {
                 index = cp.indexOf(val);
             } else {
-                cp.addElement(val);
+                cp.add(val);
                 index = cp.size() - 1;
             }
-        } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Float) {
-            Float val = Float.valueOf(value);
+        } else if (tag == ConstantPool.CONSTANT_Float) {
+            ConstantPool.CONSTANT_Float_info infoFloat = (ConstantPool.CONSTANT_Float_info) info;
+            Float val = Float.valueOf(infoFloat.value);
+            System.out.println(val);
             if (cp.contains(val)) {
                 index = cp.indexOf(val);
             } else {
-                cp.addElement(val);
+                cp.add(val);
                 index = cp.size() - 1;
             }
-        } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Double) {
-            Double val = Double.valueOf(value);
+        } else if (tag == ConstantPool.CONSTANT_Double) {
+            ConstantPool.CONSTANT_Double_info infoDouble = (ConstantPool.CONSTANT_Double_info) info;
+            Double val = Double.valueOf(infoDouble.value);
+            System.out.println(val);
             if (cp.contains(val)) {
                 index = cp.indexOf(val);
             } else {
-                cp.addElement(val);
+                cp.add(val);
                 index = cp.size() - 1;
             }
-        } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_Long) {
-            Long val = Long.valueOf(value);
+        } else if (tag == ConstantPool.CONSTANT_Long) {
+            ConstantPool.CONSTANT_Long_info infoLong = (ConstantPool.CONSTANT_Long_info) info;
+            Long val = Long.valueOf(infoLong.value);
+            System.out.println(val);
             if (cp.contains(val)) {
                 index = cp.indexOf(val);
             } else {
-                cp.addElement(val);
+                cp.add(val);
                 index = cp.size() - 1;
             }
-        } else if (entType == com.ibm.toad.cfparse.ConstantPool.CONSTANT_String) {
-            M6Class.StringRef val = new M6Class.StringRef(value, value);
+        } else if (tag == ConstantPool.CONSTANT_String) {
+            ConstantPool.CONSTANT_String_info infoString = (ConstantPool.CONSTANT_String_info) info;
+            String str = infoString.getString();
+            System.out.println(str);
+            M6Class.StringRef val = new M6Class.StringRef(str);
             if (cp.contains(val)) {
                 index = cp.indexOf(val);
             } else {
-                cp.addElement(val);
+                cp.add(val);
                 index = cp.size() - 1;
             }
         } else {
             System.out.println("Incompatible ConstantPool ConstantValue type!");
             System.exit(-1);
         }
-
-        field = null; // to release some memory..
     }
 
     public M6AccessFlags getAccessFlags() {
