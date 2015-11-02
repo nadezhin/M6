@@ -1,4 +1,5 @@
 
+import com.sun.tools.classfile.ConstantPoolException;
 import java.util.*;
 import java.io.*;
 
@@ -39,7 +40,7 @@ public class jvm2acl2 {
         return reslt;
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws ConstantPoolException {
 
         System.err.println("JVM --> ACL2  An automatic M6 state generator.");
         if (args.length <= 1) {
@@ -55,7 +56,8 @@ public class jvm2acl2 {
         processFiles(args[0], collectFileNames(input), Target.M5);
     }
 
-    private static void processFiles(String tablename, String[] args, Target target) {
+    private static void processFiles(String tablename, String[] args, Target target)
+            throws ConstantPoolException {
         M6Class[] classes = new M6Class[args.length];
 
         /* We parse each of the classfiles in order */

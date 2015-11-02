@@ -10,17 +10,23 @@ import com.sun.tools.classfile.ClassFile;
 import com.sun.tools.classfile.Code_attribute;
 import com.sun.tools.classfile.ConstantPool;
 import com.sun.tools.classfile.ConstantPoolException;
+import com.sun.tools.classfile.Descriptor;
+import com.sun.tools.classfile.DescriptorException;
 import com.sun.tools.classfile.Instruction;
 import com.sun.tools.classfile.LineNumberTable_attribute;
 import com.sun.tools.classfile.LocalVariableTable_attribute;
 import com.sun.tools.classfile.Method;
+import com.sun.tools.classfile.Opcode;
 import com.sun.tools.classfile.StackMap_attribute;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.Hashtable;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.StringTokenizer;
-import java.util.Vector;
 
 /**
  * M6Method represents a Java method in a way that allows for easy conversion to
@@ -42,28 +48,25 @@ import java.util.Vector;
  */
 public class M6Method {
 
-    private com.ibm.toad.cfparse.MethodInfo m0;
-    private Method m;
-    private com.ibm.toad.cfparse.ClassFile cf0;
-    private ClassFile cf;
+    private final Method m;
+    private final ClassFile cf;
 
-    private String name;
-    private String desc;
-    private Vector params;
+    private final String name;
+    private final String desc;
+    private final List<String> params = new ArrayList<>();
     private String returntype;
-    private boolean synced;
-    private M6AccessFlags accessflags;
+    private final M6AccessFlags accessflags;
 
-    private int max_stack; // assuming there is only one code attribute for each method.
-    private int max_locals;
-    private int code_length;
+    private final Code_attribute cai;
+    private final int max_stack; // assuming there is only one code attribute for each method.
+    private final int max_locals;
+    private final int code_length;
     private M6ExceptionHandler[] handlers;
     private M6StackMapAttrInfo stackmaps;
-    private LineNumberTable_attribute lnt;
-    private LocalVariableTable_attribute lvt;
+    private final LineNumberTable_attribute lnt;
+    private final LocalVariableTable_attribute lvt;
 
-    private Vector instructions;
-    private Vector m6instructions;
+    private List<String> m6instructions = new ArrayList<>();
 
     private boolean debug;
     private boolean processed;
@@ -81,24 +84,32 @@ public class M6Method {
      * representing the method and produces an M6Method object.
      *
      * @param c	The ClassFile representing the class
-     * @param mi	The MethodInfo structure representing the method to analyze.
+     * @param m	The MethodInfo structure representing the method to analyze.
      */
-    public M6Method(com.ibm.toad.cfparse.ClassFile c0, ClassFile c, com.ibm.toad.cfparse.MethodInfo mi, Method m) {
-        cf0 = c0;
+    public M6Method(ClassFile c, Method m)
+            throws ConstantPoolException {
         cf = c;
-        m0 = mi;
         this.m = m;
-        params = new Vector();
-        instructions = new Vector();
-        m6instructions = new Vector();
-        accessflags = null;
+        name = m.getName(c.constant_pool);
+        desc = m.descriptor.getValue(c.constant_pool);
+        accessflags = new M6AccessFlags(m.access_flags);
+        cai = (Code_attribute) m.attributes.get(Attribute.Code);
+        if (cai != null) {
+            max_stack = cai.max_stack;
+            max_locals = cai.max_locals;
+            code_length = cai.code_length;
+            lnt = (LineNumberTable_attribute) cai.attributes.get(Attribute.LineNumberTable);
+            lvt = (LocalVariableTable_attribute) cai.attributes.get(Attribute.LocalVariableTable);
+        } else {
+            max_stack = max_locals = code_length = 0;
+            lnt = null;
+            lvt = null;
+        }
+
         handlers = null;
         stackmaps = null;
 
-        lnt = null;
-
         tagTable = new Hashtable();
-        // synced= false; // as a accessflag now feb 13.
         debug = true;
         processed = false;
         lntStr = null;
@@ -166,8 +177,8 @@ public class M6Method {
 
     private void resolveTagInCode() {
         // only call this after m6instructions is collected.
-        Vector newinstr = new Vector();
-        Vector instrs = m6instructions;
+        List<String> newinstr = new ArrayList<>();
+        List<String> instrs = m6instructions;
 
         for (int i = 0; i < instrs.size(); i++) {
             String inst = (String) instrs.get(i);
@@ -176,14 +187,14 @@ public class M6Method {
                 Object key = tags.nextElement();
                 inst = replaceAllandApp(inst, key.toString(), tagTable.get(key.toString()).toString());
             }
-            newinstr.addElement(inst);
+            newinstr.add(inst);
         }
         m6instructions = newinstr;
     }
 
-    public String printLineNumberTable() {
+    public String printLineNumberTable() throws ConstantPoolException {
         StringBuffer buf = new StringBuffer();
-        buf.append("((\"" + cf0.getName() + "\" \"" + name + "\"");
+        buf.append("((\"" + cf.getName() + "\" \"" + name + "\"");
         buf.append("\n  (");
         for (int i = 0; i < params.size(); i++) {
             buf.append(params.get(i));
@@ -314,7 +325,7 @@ public class M6Method {
                 break;
             case M6:
                 buf.append(pad + "      (code");
-                if (instructions != null) {
+                if (cai != null && !no_method_body) {
                     buf.append("\n" + pad + "           (max_stack . " + max_stack + ")"
                             + " (max_locals . " + max_locals + ")"
                             + " (code_length . " + code_length + ")\n");
@@ -374,7 +385,7 @@ public class M6Method {
                 break;
             case M6:
                 buf.append(")");
-                if (instructions != null) {
+                if (cai != null && !no_method_body) {
                     buf.append("\n" + pad + "           (Exceptions ");
                     if (handlers != null) {
                         for (int i = 0; i < handlers.length; i++) {
@@ -404,6 +415,74 @@ public class M6Method {
         keep_debug_info = true;
     }
 
+    static class LabelsVisitor implements Instruction.KindVisitor<List<Integer>, Void> {
+
+        @Override
+        public List<Integer> visitNoOperands(Instruction instr, Void p) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<Integer> visitArrayType(Instruction instr, Instruction.TypeKind kind, Void p) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<Integer> visitBranch(Instruction instr, int offset, Void p) {
+            return Arrays.asList(offset);
+        }
+
+        @Override
+        public List<Integer> visitConstantPoolRef(Instruction instr, int index, Void p) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<Integer> visitConstantPoolRefAndValue(Instruction instr, int index, int value, Void p) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<Integer> visitLocal(Instruction instr, int index, Void p) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<Integer> visitLocalAndValue(Instruction instr, int index, int value, Void p) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<Integer> visitLookupSwitch(Instruction instr, int default_, int npairs, int[] matches, int[] offsets, Void p) {
+            ArrayList<Integer> result = new ArrayList<>();
+            result.add(default_);
+            for (int j : offsets) {
+                result.add(j);
+            }
+            return result;
+        }
+
+        @Override
+        public List<Integer> visitTableSwitch(Instruction instr, int default_, int low, int high, int[] offsets, Void p) {
+            ArrayList<Integer> result = new ArrayList<>();
+            result.add(default_);
+            for (int j : offsets) {
+                result.add(j);
+            }
+            return result;
+        }
+
+        @Override
+        public List<Integer> visitValue(Instruction instr, int value, Void p) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<Integer> visitUnknown(Instruction instr, Void p) {
+            return Collections.emptyList();
+        }
+    }
+
     /**
      * This method processes the MethodInfo given in the constructor. It is
      * necessary to call this method before querying this method.
@@ -412,113 +491,82 @@ public class M6Method {
      * representing the outer class from which this method is taken from.
      * @param target Target JVM model
      */
-    public void processMethod(List constant_pool, Target target) throws ConstantPoolException {
+    public void processMethod(List constant_pool, Target target) throws ConstantPoolException, DescriptorException {
         /* The name of the method */
-        name = m0.getName();
         if (debug) {
             System.out.println("\nProcessing method: " + name);
         }
 
         /* We parse in the parameters into a Vector insert "top" if necessary. if necessary. */
-        desc = m0.getDesc();
-        String[] ps = m0.getParams();
-        for (int i = 0; i < ps.length; i++) {
-            String curtype = ps[i];
-            params.addElement(ACL2utils.JavaTypeStrToACL2TypeStr(curtype));
+        int paramCount = m.descriptor.getParameterCount(cf.constant_pool);
+        String paramTypes = m.descriptor.getParameterTypes(cf.constant_pool);
+        if (paramCount > 0) {
+            assert paramTypes.charAt(0) == '(' && paramTypes.charAt(paramTypes.length() - 1) == ')';
+            String[] paramStrs = paramTypes.substring(1, paramTypes.length() - 1).split(",");
+            assert paramStrs.length == paramCount;
+            for (int i = 0; i < paramCount; i++) {
+                params.add(ACL2utils.JavaTypeStrToACL2TypeStr(paramStrs[i].trim()));
+            }
+        } else {
+            assert paramTypes.equals("()");
         }
+//        String[] ps = m0.getParams();
+//        for (int i = 0; i < ps.length; i++) {
+//            String curtype = ps[i];
+//            params.add(ACL2utils.JavaTypeStrToACL2TypeStr(curtype));
+//        }
         if (debug) {
             System.out.println("Parameters: " + params);
         }
         /* store the return type */
-        returntype = ACL2utils.JavaTypeStrToACL2TypeStr(m0.getReturnType()); // hanbing
-
-      // we need to parse the Descriptor to get types, instead of using Java
-        // String representation
-        /* Set the sync flag */
-
-        /* Set native, abstract */
-      // only interested in these two flags now.  
-       /*
-         if (Access.isNative(m.getAccess())) {
-         accessflags.addElement("*native*");
-         };
-
-         if (Access.isStatic(m.getAccess())) {
-         accessflags.addElement("*static*");
-         };
-
-         if (Access.isAbstract(m.getAccess())) {
-         accessflags.addElement("*abstract*");
-         };
-
-         if (Access.isSynchronized(m.getAccess())) {
-         accessflags.addElement("*synced*");
-         };
-
-         */
-        // Changed to make use of the M6AccessFlags 
-        accessflags = new M6AccessFlags(m.access_flags);
+        returntype = ACL2utils.JavaTypeStrToACL2TypeStr(m.descriptor.getReturnType(cf.constant_pool)); // hanbing
 
         /* Process the code attribute */
-        com.ibm.toad.cfparse.attributes.AttrInfoList al0 = m0.getAttrs();
-        Attributes al = m.attributes;
-        assert al0.length() == al.size();
-        if (al0 == null) {
-            instructions = null;
-            return;  /* abstract method--no instructions */
-
-        }
-
-        com.ibm.toad.cfparse.attributes.CodeAttrInfo cai0 = (com.ibm.toad.cfparse.attributes.CodeAttrInfo) al0.get("Code");
-        Code_attribute cai = (Code_attribute) al.get(Attribute.Code);
-        assert (cai == null) == (cai0 == null);
         if (cai == null || no_method_body) {
-            instructions = null;
             switch (target) {
                 case M5:
                     if (m.access_flags.is(AccessFlags.ACC_NATIVE)) {
-                        m6instructions.addElement("NIL ; native method");
+                        m6instructions.add("NIL ; native method");
                     }
                     break;
                 case M6:
                     break;
             }
         } else {
-            assert cai0.getMaxStack() == cai.max_stack;
-            assert cai0.getMaxLocals() == cai.max_locals;
-            assert Arrays.equals(cai0.getCode(), cai.code);
-            assert cai0.getExceptions().length == cai.exception_table_length;
-            assert cai0.getAttrs().length() == cai.attributes.size();
-
-            com.ibm.toad.cfparse.instruction.MutableCodeSegment mc = new com.ibm.toad.cfparse.instruction.MutableCodeSegment(cf0.getCP(), cai0, true);
-            mc.setInstructionFactory(new com.ibm.toad.cfparse.instruction.StringInstructionFactory());
-            com.ibm.toad.cfparse.instruction.MutableCodeIterator mci = new com.ibm.toad.cfparse.instruction.MutableCodeIterator(mc);
-            /* mci is an iterator that gives access to the instructions */
+            LinkedHashMap<Integer, Integer> labels = new LinkedHashMap<>();
+            LabelsVisitor labelsVisitor = new LabelsVisitor();
+            for (Instruction inst : cai.getInstructions()) {
+                for (int offset : inst.accept(labelsVisitor, null)) {
+                    int label = inst.getPC() + offset;
+                    if (!labels.containsKey(label)) {
+                        labels.put(label, labels.size());
+                    }
+                }
+            }
+            for (Code_attribute.Exception_data e : cai.exception_table) {
+                if (!labels.containsKey(e.start_pc)) {
+                    labels.put(e.start_pc, labels.size());
+                }
+                if (!labels.containsKey(e.end_pc)) {
+                    labels.put(e.end_pc, labels.size());
+                }
+                if (!labels.containsKey(e.handler_pc)) {
+                    labels.put(e.handler_pc, labels.size());
+                }
+            }
 
             int offset = 0;
-            com.ibm.toad.cfparse.instruction.ImmutableCodeSegment imc = new com.ibm.toad.cfparse.instruction.ImmutableCodeSegment(cai0.getCode());
-            // ImmutableCodeIterator imci = new ImmutableCodeIterator(imc);
+            int li = 0; // index in linenumber table
             // get the parsed code part
-
-            // System.out.println("number of instructions" + mci.length() + " " + imc.getNumInstructions());
-            // System.out.println("CodeSize" + cai.getCode().length + " " + " " + imc.getOffset(imc.getNumInstructions()-1));
-            while (mci.hasNext()) {
-                com.ibm.toad.cfparse.instruction.BaseInstruction inst0 = (com.ibm.toad.cfparse.instruction.BaseInstruction) mci.next();
-                //     System.out.println("\n"+idx+inst.toString());
-                if (inst0.toString().startsWith("line_number")) {
-                    m6instructions.addElement("; " + inst0.toString().trim());
-                    continue;
+            for (Instruction instr : cai.getInstructions()) {
+                if (lnt != null && li < lnt.line_number_table.length && lnt.line_number_table[li].start_pc == instr.getPC()) {
+                    m6instructions.add("; " + "line_number #" + lnt.line_number_table[li].line_number);
+                    li++;
                 }
-
-                Instruction inst = new Instruction(cai.code, offset);
-                assert inst0.getOpCode()
-                        == (inst.getOpcode().opcode >= 0x100 ? (inst.getOpcode().opcode) >> 8 : inst.getOpcode().opcode);
-                assert inst0.getLength(offset) == inst.length();
-                String resultStr = parseInst(inst0, inst, cf, constant_pool, offset, target);
+                String resultStr = parseInst(instr, constant_pool, offset, labels, target);
                 if (resultStr != null) {
-                    m6instructions.addElement(resultStr);
-                    offset = offset + inst0.getLength(offset);
-
+                    m6instructions.add(resultStr);
+                    offset = offset + instr.length();
                 }
             }
 
@@ -531,23 +579,12 @@ public class M6Method {
                     break;
             }
 
-            // get the max_stack, in # slot
-            max_stack = cai0.getMaxStack();
-
-            // get the max_locals
-            max_locals = cai0.getMaxLocals();
-
-            // get the code_length in number of instructions. -- changed feb 17 hanbing
-            // now in number of bytes -- the length of byte array. 
-            // instructions like tableswitch need padding.
-            code_length = cai0.getCode().length; // in bytes -- feb 17 
-
             // add an end marker to the code.
             switch (target) {
                 case M5:
                     break;
                 case M6:
-                    m6instructions.addElement("(endofcode " + code_length + ")");
+                    m6instructions.add("(endofcode " + code_length + ")");
                     break;
             }
 
@@ -574,8 +611,6 @@ public class M6Method {
             }
 
             // get LineNumberAttrInfo 
-            lnt = (LineNumberTable_attribute) aal.get(Attribute.LineNumberTable);
-            lvt = (LocalVariableTable_attribute) aal.get(Attribute.LocalVariableTable);
         }
         processed = true;
 
@@ -583,6 +618,16 @@ public class M6Method {
             lntStr = printLineNumberTable();
             lvtStr = printLocalVariableTable();
         }
+    }
+
+    private static String makeClassCP_1(String jtype, Target target) {
+        switch (target) {
+            case M5:
+                return "\"" + jtype + "\"";
+            case M6:
+                return ACL2utils.ClassInfoToACL2TypeStr(jtype);
+        }
+        throw new AssertionError();
     }
 
     private static String makeClassCP(String jtype, Target target) {
@@ -609,7 +654,7 @@ public class M6Method {
         throw new AssertionError();
     }
 
-    private static String makeMethodCP(String n, String cn, Vector params, String rt, Target target) {
+    private static String makeMethodCP(String n, String cn, List<String> params, String rt, Target target) {
         StringBuffer buf = new StringBuffer();
         switch (target) {
             case M5:
@@ -631,549 +676,404 @@ public class M6Method {
         return buf.toString();
     }
 
-    private String parseInst(com.ibm.toad.cfparse.instruction.BaseInstruction inst0,
+    class ParseVisitor implements Instruction.KindVisitor<String, Map<Integer, Integer>> {
+
+        private final Target target;
+        private final List constant_pool;
+        private final StringBuffer tmp2;
+
+        ParseVisitor(Target target, List constant_pool, StringBuffer tmp2) {
+            this.target = target;
+            this.constant_pool = constant_pool;
+            this.tmp2 = tmp2;
+        }
+
+        @Override
+        public String visitNoOperands(Instruction instr, Map<Integer, Integer> labels) {
+            StringBuilder sb = new StringBuilder();
+            return sb.append(instr.getMnemonic())
+                    .toString();
+        }
+
+        @Override
+        public String visitArrayType(Instruction instr, Instruction.TypeKind tk, Map<Integer, Integer> labels) {
+            StringBuilder sb = new StringBuilder();
+            return sb.append(instr.getMnemonic())
+                    .append(' ')
+                    .append(tk.name.toUpperCase())
+                    .toString();
+        }
+
+        @Override
+        public String visitBranch(Instruction instr, int offset, Map<Integer, Integer> labels) {
+            StringBuilder sb = new StringBuilder();
+            int brLabel = instr.getPC() + offset;
+            return sb.append(instr.getMnemonic())
+                    .append(" TAG_")
+                    .append(labels.get(brLabel))
+                    .toString();
+        }
+
+        @Override
+        public String visitConstantPoolRef(Instruction instr, int index, Map<Integer, Integer> labels) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(instr.getMnemonic()).append(' ');
+            try {
+                ConstantPool.CONSTANT_Class_info infoClass;
+                ConstantPool.CONSTANT_NameAndType_info infoNameAndType;
+                ConstantPool.CPInfo info = cf.constant_pool.get(index);
+                switch (info.getTag()) {
+                    case ConstantPool.CONSTANT_Integer:
+                        Integer valInteger = new Integer(((ConstantPool.CONSTANT_Integer_info) info).value);
+                        if (constant_pool.contains(valInteger)) {
+                            sb.append(constant_pool.indexOf(valInteger));
+                        } else {
+                            constant_pool.add(valInteger);
+                            sb.append(constant_pool.size() - 1);  // zero-based indices
+                        }
+                        tmp2.append(";;INT:: \"" + valInteger + "\"");
+                        break;
+                    case ConstantPool.CONSTANT_Float:
+                        Float valFloat = new Float(((ConstantPool.CONSTANT_Float_info) info).value);
+                        if (constant_pool.contains(valFloat)) {
+                            sb.append(constant_pool.indexOf(valFloat));
+                        } else {
+                            constant_pool.add(valFloat);
+                            sb.append(constant_pool.size() - 1);  // zero-based indices
+                        }
+                        tmp2.append(";;FLOAT:: \"" + valFloat + "\"");
+                        break;
+                    case ConstantPool.CONSTANT_Long:
+                        Long valLong = new Long(((ConstantPool.CONSTANT_Long_info) info).value);
+                        if (constant_pool.contains(valLong)) {
+                            sb.append(constant_pool.indexOf(valLong));
+                        } else {
+                            constant_pool.add(valLong);
+                            sb.append(constant_pool.size() - 1);  // zero-based indices
+                        }
+                        tmp2.append(instr.getOpcode() == Opcode.LDC2_W ? ";; LONG:: \"" : ";;Long:: \"")
+                                .append(valLong)
+                                .append("\"");
+                        break;
+                    case ConstantPool.CONSTANT_Double:
+                        Double valDouble = new Double(((ConstantPool.CONSTANT_Double_info) info).value);
+                        if (constant_pool.contains(valDouble)) {
+                            sb.append(constant_pool.indexOf(valDouble));
+                        } else {
+                            constant_pool.add(valDouble);
+                            sb.append(constant_pool.size() - 1);  // zero-based indices
+                        }
+                        tmp2.append(instr.getOpcode() == Opcode.LDC2_W ? ";; DOUBLE:: \"" : ";;Doulbe:: \"")
+                                .append(valDouble)
+                                .append("\"");
+                        break;
+                    case ConstantPool.CONSTANT_Class:
+                        switch (instr.getOpcode()) {
+                            case LDC:
+                            case LDC_W:
+                            case LDC2_W:
+                                M6Class.ClassRef valClass = new M6Class.ClassRef(((ConstantPool.CONSTANT_Class_info) info).getName().replace('/', '.'));
+                                if (constant_pool.contains(valClass)) {
+                                    sb.append(constant_pool.indexOf(valClass));
+                                } else {
+                                    constant_pool.add(valClass);
+                                    sb.append(constant_pool.size() - 1);  // zero-based indices
+                                }
+                                tmp2.append(";;CLASS:: \"" + valClass + "\"");
+                                break;
+                            default:
+                                infoClass = (ConstantPool.CONSTANT_Class_info) info;
+                                sb.append(makeClassCP_1(infoClass.getName().replace('/', '.'), target));
+                        }
+                        break;
+                    case ConstantPool.CONSTANT_String:
+                        M6Class.StringRef valString = new M6Class.StringRef(((ConstantPool.CONSTANT_String_info) info).getString());
+                        if (constant_pool.contains(valString)) {
+                            sb.append(constant_pool.indexOf(valString));
+                        } else {
+                            constant_pool.add(valString);
+                            sb.append(constant_pool.size() - 1);  // zero-based indices
+                        }
+                        tmp2.append(";;STRING:: \"" + valString.toString(target == Target.M6) + "\"");
+                        break;
+                    case ConstantPool.CONSTANT_Fieldref:
+                        ConstantPool.CONSTANT_Fieldref_info infoFieldref
+                                = (ConstantPool.CONSTANT_Fieldref_info) info;
+                        infoClass = cf.constant_pool.getClassInfo(infoFieldref.class_index);
+                        infoNameAndType = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index);
+                        switch (target) {
+                            case M5:
+                                sb.append("\"")
+                                        .append(infoClass.getName().replace('/', '.'))
+                                        .append("\" \"")
+                                        .append(infoNameAndType.getName());
+                                if (ACL2utils.NAME_AND_TYPE) {
+                                    sb.append(':')
+                                            .append(infoNameAndType.getType())
+                                            .append("\"");
+                                } else {
+                                    sb.append("\"");
+                                    if (infoNameAndType.getType().equals("J")
+                                            || infoNameAndType.getType().equals("D")) {
+                                        sb.append(" t");
+                                    }
+                                }
+                                break;
+                            case M6:
+                                sb.append("(fieldCP \"")
+                                        .append(infoNameAndType.getName())
+                                        .append("\" \"")
+                                        .append(infoClass.getName().replace('/', '.'))
+                                        .append("\" ")
+                                        .append(makeClassCP_1(infoNameAndType.getType(), target))
+                                        .append(')');
+                                break;
+                        }
+                        break;
+                    case ConstantPool.CONSTANT_Methodref:
+                    case ConstantPool.CONSTANT_InterfaceMethodref:
+                        if (info.getTag() == ConstantPool.CONSTANT_InterfaceMethodref) {
+                            ConstantPool.CONSTANT_InterfaceMethodref_info infoInterfaceMethodref
+                                    = (ConstantPool.CONSTANT_InterfaceMethodref_info) info;
+                            infoClass = cf.constant_pool.getClassInfo(infoInterfaceMethodref.class_index);
+                            infoNameAndType = cf.constant_pool.getNameAndTypeInfo(infoInterfaceMethodref.name_and_type_index);
+
+                        } else {
+                            ConstantPool.CONSTANT_Methodref_info infoMethodref
+                                    = (ConstantPool.CONSTANT_Methodref_info) info;
+                            infoClass = cf.constant_pool.getClassInfo(infoMethodref.class_index);
+                            infoNameAndType = cf.constant_pool.getNameAndTypeInfo(infoMethodref.name_and_type_index);
+                        }
+                        Descriptor desc = new Descriptor(infoNameAndType.type_index);
+                        switch (target) {
+                            case M5:
+                                sb.append(' ');
+//                                buf.append("\"" + cn + "\" \"" + n + "\" " + params.size());
+                                break;
+                            case M6:
+                                sb.setLength(sb.length() - 1);
+                                sb.append("\n\t\t\t\t\t")
+                                        .append("(methodCP \"")
+                                        .append(infoNameAndType.getName())
+                                        .append("\" \"")
+                                        .append(infoClass.getName().replace('/', '.'))
+                                        .append("\" (");
+
+                                int paramCount = desc.getParameterCount(cf.constant_pool);
+                                if (paramCount > 0) {
+                                    String paramTypes = desc.getParameterTypes(cf.constant_pool);
+                                    assert paramTypes.charAt(0) == '(' && paramTypes.charAt(paramTypes.length() - 1) == ')';
+                                    String[] params = paramTypes.substring(1, paramTypes.length() - 1).split(",");
+                                    assert params.length == paramCount;
+                                    for (int i = 0; i < paramCount; i++) {
+                                        sb.append(makeClassCP(params[i].trim(), target));
+                                        if (i < paramCount - 1) {
+                                            sb.append(' ');
+                                        }
+                                    }
+                                }
+                                sb.append(") ")
+                                        .append(makeClassCP(desc.getReturnType(cf.constant_pool), target))
+                                        .append(')');
+                                break;
+                        }
+                        break;
+                    default:
+                        throw new AssertionError();
+                }
+            } catch (ConstantPoolException | DescriptorException e) {
+                sb.append(e.getMessage());
+            }
+            return sb.toString();
+        }
+
+        @Override
+        public String visitConstantPoolRefAndValue(Instruction instr, int index, int value, Map<Integer, Integer> labels) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(instr.getMnemonic())
+                    .append(' ');
+            try {
+                ConstantPool.CONSTANT_Class_info infoClass;
+                ConstantPool.CPInfo info = cf.constant_pool.get(index);
+                switch (info.getTag()) {
+                    case ConstantPool.CONSTANT_Class:
+                        infoClass = cf.constant_pool.getClassInfo(index);
+                        sb.append(instr.getMnemonic())
+                                .append(' ')
+                                .append(infoClass.getName())
+                                .append(' ')
+                                .append(value);
+                        break;
+                    case ConstantPool.CONSTANT_InterfaceMethodref:
+                        ConstantPool.CONSTANT_InterfaceMethodref_info infoInterfaceMethodref
+                                = (ConstantPool.CONSTANT_InterfaceMethodref_info) info;
+                        infoClass = cf.constant_pool.getClassInfo(infoInterfaceMethodref.class_index);
+                        ConstantPool.CONSTANT_NameAndType_info infoNameAndType
+                                = cf.constant_pool.getNameAndTypeInfo(infoInterfaceMethodref.name_and_type_index);
+                        Descriptor desc = new Descriptor(infoNameAndType.type_index);
+                        switch (target) {
+                            case M5:
+                                sb.append(' ');
+//                                buf.append("\"" + cn + "\" \"" + n + "\" " + params.size());
+                                break;
+                            case M6:
+                                sb.setLength(sb.length() - 1);
+                                sb.append("\n\t\t\t\t\t")
+                                        .append("(methodCP \"")
+                                        .append(infoNameAndType.getName())
+                                        .append("\" \"")
+                                        .append(infoClass.getName().replace('/', '.'))
+                                        .append("\" (");
+
+                                int paramCount = desc.getParameterCount(cf.constant_pool);
+                                if (paramCount > 0) {
+                                    String paramTypes = desc.getParameterTypes(cf.constant_pool);
+                                    assert paramTypes.charAt(0) == '(' && paramTypes.charAt(paramTypes.length() - 1) == ')';
+                                    String[] params = paramTypes.substring(1, paramTypes.length() - 1).split(",");
+                                    assert params.length == paramCount;
+                                    for (int i = 0; i < paramCount; i++) {
+                                        sb.append(makeClassCP(params[i].trim(), target));
+                                        if (i < paramCount - 1) {
+                                            sb.append(' ');
+                                        }
+                                    }
+                                }
+                                sb.append(") ")
+                                        .append(makeClassCP(desc.getReturnType(cf.constant_pool), target))
+                                        .append(") ")
+                                        .append(value);
+                                break;
+                        }
+                        break;
+                }
+            } catch (ConstantPoolException | DescriptorException e) {
+                sb.append(e.getMessage());
+            }
+            return sb.toString();
+        }
+
+        @Override
+        public String visitLocal(Instruction instr, int index, Map<Integer, Integer> labels) {
+            StringBuilder sb = new StringBuilder();
+            return sb.append(instr.getMnemonic()/*.replace("_w", "")*/)
+                    .append(' ')
+                    .append(index)
+                    .toString();
+        }
+
+        @Override
+        public String visitLocalAndValue(Instruction instr, int index, int value, Map<Integer, Integer> labels) {
+            StringBuilder sb = new StringBuilder();
+            return sb.append(instr.getMnemonic().replace("_w", ""))
+                    .append(' ')
+                    .append(index)
+                    .append(' ')
+                    .append(value)
+                    .toString();
+        }
+
+        @Override
+        public String visitLookupSwitch(Instruction instr, int default_, int npairs, int[] matches, int[] offsets, Map<Integer, Integer> labels) {
+            StringBuilder sb = new StringBuilder();
+            int brLabel = instr.getPC() + default_;
+            sb.append(instr.getMnemonic()) // the opcode
+                    .append(" (lookupswitchinfo TAG_")
+                    .append(labels.get(brLabel)) // the default target
+                    .append(' ')
+                    .append(npairs) // the pair count
+                    .append(" (");
+            for (int i = 0; i < npairs; i++) {
+                brLabel = instr.getPC() + offsets[i];
+                sb.append('(')
+                        .append(matches[i])
+                        .append(" . TAG_")
+                        .append(labels.get(brLabel))
+                        .append(") ");
+            }
+            sb.setCharAt(sb.length() - 1, ')');
+            return sb.append(")")
+                    .toString();
+        }
+
+        @Override
+        public String visitTableSwitch(Instruction instr, int default_, int low, int high, int[] offsets, Map<Integer, Integer> labels) {
+            StringBuilder sb = new StringBuilder();
+            int brLabel = instr.getPC() + default_;
+            sb.append(instr.getMnemonic()) // the opcode
+                    .append(" (tableswitchinfo TAG_")
+                    .append(labels.get(brLabel)) // the default target
+                    .append(" (")
+                    .append(low)
+                    .append(" . ")
+                    .append(high)
+                    .append(") (");
+            for (int i = 0; i < high - low + 1; i++) {
+                brLabel = instr.getPC() + offsets[i];
+                sb.append("TAG_")
+                        .append(labels.get(brLabel))
+                        .append(' ');
+            }
+            sb.setCharAt(sb.length() - 1, ')');
+            return sb.append(")")
+                    .toString();
+        }
+
+        @Override
+        public String visitValue(Instruction instr, int value, Map<Integer, Integer> labels) {
+            StringBuilder sb = new StringBuilder();
+            return sb.append(instr.getMnemonic())
+                    .append(' ')
+                    .append(value)
+                    .toString();
+        }
+
+        @Override
+        public String visitUnknown(Instruction instr, Map<Integer, Integer> labels) {
+            return "bytecode " + instr.getOpcode();
+        }
+    }
+
+    private String parseInst(
             Instruction inst,
-            ClassFile cf,
             List constant_pool,
             int offset,
+            Map<Integer, Integer> labels,
             Target targetModel) throws ConstantPoolException {
         StringBuffer tmp = new StringBuffer();
         StringBuffer tmp2 = new StringBuffer();
-        StringBuffer buf = new StringBuffer();
-        StringTokenizer tok;
-        ConstantPool.CPInfo info;
-        int tag;
 
-        System.out.println(inst0.toString());
+        ParseVisitor parseVisitor = new ParseVisitor(targetModel, constant_pool, tmp2);
+//        System.out.println(inst.toString());
 
         switch (targetModel) {
             case M5:
                 tmp.append("(");
-                if (inst0.getTag() != null) {
-                    tmp.append("LABEL::").append(inst0.getTag()).append(" ");
-                    tagTable.put(inst0.getTag(), new Integer(offset));
-                    tmp2.append(";;at " + inst0.getTag());
+                if (labels.containsKey(inst.getPC())) {
+                    String label = "TAG_" + labels.get(inst.getPC());
+                    tmp.append("LABEL::").append(label).append(" ");
+                    tagTable.put(label, new Integer(offset));
+                    tmp2.append(";;at " + label);
                 }
                 break;
             case M6:
                 tmp.append("(" + offset + " (");
-                if (inst0.getTag() != null) {
-                    tagTable.put(inst0.getTag(), new Integer(offset));
-                    tmp2.append(";;at " + inst0.getTag());
+                if (labels.containsKey(inst.getPC())) {
+                    String label = "TAG_" + labels.get(inst.getPC());
+                    tagTable.put(label, new Integer(offset));
+                    tmp2.append(";;at " + label);
                 }
                 break;
         }
 
+        tmp.append(inst.accept(parseVisitor, labels));
 
-        /*	 
-         tmp.append("JVM::");
-         */
-        // here George chose not to explictly list all OPCODE, 
-        // because if the inst is one byte, inst.toString() 
-        // suffice
-        if (inst0.getLength(offset) == 1) {
-            tmp.append(inst0.toString().trim());
-            switch (targetModel) {
-                case M5:
-                    tmp.append(")");
-                    break;
-                case M6:
-                    tmp.append("))");  // here we handled aload_x etc.  
-                    break;
-            }
-        } else {
-            int opCode = inst0.getOpCode();
-            boolean isWide = opCode == com.ibm.toad.cfparse.instruction.JVMConstants.WIDE;
-            if (isWide) {
-                opCode = inst0.getCode(null, 0)[1] & 0xFF;
-                if (opCode != com.ibm.toad.cfparse.instruction.JVMConstants.IINC
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.ALOAD
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.ASTORE
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.DLOAD
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.DSTORE
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.FLOAD
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.FSTORE
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.ILOAD
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.ISTORE
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.LLOAD
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.LSTORE
-                        && opCode != com.ibm.toad.cfparse.instruction.JVMConstants.RET) {
-                    opCode = com.ibm.toad.cfparse.instruction.JVMConstants.WIDE;
-                }
-            }
-            switch (opCode) {
-                /* aload v5
-                 * (JVM::aload 4) */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.ALOAD:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.ASTORE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.ILOAD:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.ISTORE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.LLOAD:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.LSTORE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.FLOAD:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.FSTORE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.DLOAD:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.DSTORE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.BIPUSH:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.RET:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.SIPUSH:
-                    buf.append(inst0.toString().replace("wide ", "").trim());
-                    buf.deleteCharAt(inst0.toString().trim().indexOf(" ") + 1);
-                    tmp.append(buf);
-                    break;
-
-                /* anewarray java.lang.String
-                 * (JVM::anewarray (class "java.lang.String")) */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.ANEWARRAY:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.NEW:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.INSTANCEOF:
-                    tok = new StringTokenizer(inst0.toString().trim());
-                    buf.append(tok.nextToken());
-                    String typeName = tok.nextToken();
-                    buf.append(" " + makeClassCP(typeName, targetModel));
-                    tmp.append(buf.toString());
-                    break;
-
-                /* getfield Model3D java.awt.Dimention.width
-                 * (JVM::getfield (fieldCP "width" "java.awt.Dimention" (class "java.awt.Dimention.Model3D")) */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.GETFIELD:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.PUTFIELD:
-                    tok = new StringTokenizer(inst0.toString().trim());
-                    buf.append(tok.nextToken()); // the opcode
-
-                    String fieldTypeName = tok.nextToken();             // throw away the data type
-                    String field = tok.nextToken();
-                    String fieldClassName = field.substring(0, field.lastIndexOf("."));
-                    String fieldName = field.substring(field.lastIndexOf(".") + 1);
-                    if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
-                        byte[] instCode = inst0.getCode(null, 0);
-                        assert instCode.length == 3;
-                        int fieldRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
-                        ConstantPool.CONSTANT_Fieldref_info infoFieldref
-                                = (ConstantPool.CONSTANT_Fieldref_info) cf.constant_pool.get(fieldRefOffs);
-                        String fieldType = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index).getType();
-                        fieldName += ":" + fieldType;
-                    }
-
-                    buf.append(" " + makeFieldCP(fieldName, fieldClassName, fieldTypeName, targetModel));
-
-                    tmp.append(buf.toString());
-                    break;
-
-                /* goto TAG_9
-                 * (JVM::goto ) */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.GOTO:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ACMPEQ:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ACMPNE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPEQ:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPNE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPLT:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPGE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPGT:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IF_ICMPLE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IFEQ:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IFNE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IFLT:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IFGE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IFGT:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IFLE:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IFNONNULL:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IFNULL:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.JSR:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.JSR_W:
-                    buf.append(inst0.toString().trim());
-                    switch (targetModel) {
-                        case M5:
-                            buf.insert(buf.toString().indexOf(" ") + 1, "LABEL::");
-                            break;
-                        case M6:
-                            break;
-                    }
-                    tmp.append(buf.toString());
-                    // leave the tag in the buf. 
-                    break;
-
-                /* newarray T_INT
-                 * (JVM::newarray T_INT) */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.NEWARRAY:
-                    String narray = inst0.toString().trim();
-                    tmp.append(narray.substring(0, narray.indexOf(" "))); // op-code
-                    tmp.append(" " + narray.substring(narray.lastIndexOf("_") + 1));
-                    break;
-
-                /* iinc v4 #1
-                 * (JVM::iinc 4 1) */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IINC:
-                    buf.append(inst0.toString().replace("wide ", "").trim());
-                    buf.deleteCharAt(inst0.toString().trim().indexOf(" ") + 1);
-                    buf.deleteCharAt(buf.toString().lastIndexOf(" ") + 1);
-                    tmp.append(buf);
-                    break;
-
-                /* multianewarray java.lang.Object[][][] #3
-                 * (JVM::multianewarray 3) */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.MULTIANEWARRAY:
-                    tok = new StringTokenizer(inst0.toString().trim());
-                    buf.append(tok.nextToken()); // the opcode
-                    String ArrayType = tok.nextToken();             // throw away the data type
-                    buf.append(makeClassCP(ArrayType, targetModel));
-                    buf.append(" ");
-                    String dimCount = tok.nextToken();
-                    buf.append(" ");
-                    buf.append(dimCount.substring(1, dimCount.length()));
-                    tmp.append(buf.toString());
-                    break;
-
-                /* invokevirtual int Alpha.fun2(java.lang.Object, int)
-                 * (JVM::invokevirtual "Alpha" "fun2" 2) */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKEVIRTUAL:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKESTATIC:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKESPECIAL:
-                    tok = new StringTokenizer(inst0.toString().trim());
-                    tmp.append(tok.nextToken()); // opcode
-                    String MethodReturnType = tok.nextToken(); // throw away the return type
-                    String Method = tok.nextToken("(");
-                    String MethodClassName = Method.substring(0, Method.lastIndexOf(".")).trim();
-                    String MethodName = Method.substring(Method.lastIndexOf(".") + 1).trim();
-                    if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
-                        byte[] instCode = inst0.getCode(null, 0);
-                        assert instCode.length == 3;
-                        int methRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
-                        ConstantPool.CPInfo methRef = cf.constant_pool.get(methRefOffs);
-                        int name_and_type_index;
-                        switch (methRef.getTag()) {
-                            case ConstantPool.CONSTANT_Methodref:
-                                name_and_type_index = ((ConstantPool.CONSTANT_Methodref_info) methRef).name_and_type_index;
-                                break;
-                            case ConstantPool.CONSTANT_InterfaceMethodref:
-                                name_and_type_index = ((ConstantPool.CONSTANT_InterfaceMethodref_info) methRef).name_and_type_index;
-                                break;
-                            default:
-                                throw new AssertionError();
-                        }
-                        String methType = cf.constant_pool.getNameAndTypeInfo(name_and_type_index).getType();
-                        MethodName += ":" + methType;
-                    }
-                    Vector params = new Vector();
-                    String rawparams = tok.nextToken("");
-
-                    /* trim off the outer parens */
-                    rawparams = rawparams.substring(1, rawparams.length() - 1);
-                    if (rawparams.compareTo("") == 0) {
-                    } else {
-                        tok = new StringTokenizer(rawparams);
-                        while (tok.hasMoreTokens()) {
-                            params.addElement(tok.nextToken(",").trim());
-                        };
-                    }
-                    switch (targetModel) {
-                        case M5:
-                            tmp.append(" " + makeMethodCP(MethodName, MethodClassName, params, MethodReturnType, targetModel));
-                            break;
-                        case M6:
-                            tmp.append("\n\t\t\t\t\t" + makeMethodCP(MethodName, MethodClassName, params, MethodReturnType, targetModel) + ")");
-                            break;
-                    }
-                    break;
-
-                /* ldc "Hello, World!"
-                 * ldc #65535
-                 * (JVM::ldc 3)  3 points to the STRING object "Hello, World!"
-                 * (JVM::ldc 5)  5 points to an INT object 65535 */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.LDC:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.LDC_W:
-                    if (opCode == com.ibm.toad.cfparse.instruction.JVMConstants.LDC) {
-                        tmp.append("ldc ");
-                        byte cpidx1 = inst0.getCode(null, 1)[1];
-                        int cpidx = (int) cpidx1 & 255;
-                        info = cf.constant_pool.get(cpidx);
-                        tag = info.getTag();
-                    } else {
-                        tmp.append("ldc_w ");
-
-                        int cpidx1 = (int) inst0.getCode(null, 1)[1];
-                        cpidx1 = cpidx1 & 255;
-                        int cpidx2 = (int) inst0.getCode(null, 1)[2];
-                        cpidx2 = cpidx2 & 255;
-
-                        int ldc_idx = (cpidx1 << 8) | cpidx2;
-                        info = cf.constant_pool.get(ldc_idx);
-                        tag = info.getTag();
-                    }
-
-                    if (tag == ConstantPool.CONSTANT_Integer) {
-
-                        Integer val = new Integer(((ConstantPool.CONSTANT_Integer_info) info).value);
-
-                        if (constant_pool.contains(val)) {
-                            tmp.append(constant_pool.indexOf(val));
-                        } else {
-                            constant_pool.add(val);
-                            tmp.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(";;INT:: \"" + val + "\"");
-                    } else if (tag == ConstantPool.CONSTANT_Float) {
-
-                        Float val = new Float(((ConstantPool.CONSTANT_Float_info) info).value);
-
-                        if (constant_pool.contains(val)) {
-                            tmp.append(constant_pool.indexOf(val));
-                        } else {
-                            constant_pool.add(val);
-                            tmp.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(";;FLOAT:: \"" + val + "\"");
-                    } else if (tag == ConstantPool.CONSTANT_Double) {
-
-                        Double val = new Double(((ConstantPool.CONSTANT_Double_info) info).value);
-
-                        if (constant_pool.contains(val)) {
-                            tmp.append(constant_pool.indexOf(val));
-                        } else {
-                            constant_pool.add(val);
-                            tmp.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(";;Doulbe:: \"" + val + "\"");
-                    } else if (tag == ConstantPool.CONSTANT_Long) {
-
-                        Long val = new Long(((ConstantPool.CONSTANT_Long_info) info).value);
-
-                        if (constant_pool.contains(val)) {
-                            tmp.append(constant_pool.indexOf(val));
-                        } else {
-                            constant_pool.add(val);
-                            tmp.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(";;Long:: \"" + val + "\"");
-                    } else if (tag == ConstantPool.CONSTANT_Class) {
-                        M6Class.ClassRef val = new M6Class.ClassRef(((ConstantPool.CONSTANT_Class_info) info).getName().replace('/', '.'));
-
-                        if (constant_pool.contains(val)) {
-                            tmp.append(constant_pool.indexOf(val));
-                        } else {
-                            constant_pool.add(val);
-                            tmp.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(";;CLASS:: \"" + val + "\"");
-                    } else {
-                        M6Class.StringRef val = new M6Class.StringRef(((ConstantPool.CONSTANT_String_info) info).getString());
-
-                        if (constant_pool.contains(val)) {
-                            tmp.append(constant_pool.indexOf(val));
-                        } else {
-                            constant_pool.add(val);
-                            tmp.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(";;STRING:: \"" + val.toString(targetModel == Target.M6) + "\"");
-                    }
-                    break;
-
-                /* ldc2_w 837462398
-                 * (JVM::ldc2_w 3)  3 points to the LONG object 837462398 */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.LDC2_W:
-
-                    tmp.append("ldc2_w ");
-
-                    int cpidx1 = (int) inst0.getCode(null, 1)[1];
-                    cpidx1 = cpidx1 & 255;
-                    int cpidx2 = (int) inst0.getCode(null, 1)[2];
-                    cpidx2 = cpidx2 & 255;
-
-                    int ldc_idx = (cpidx1 << 8) | cpidx2;
-
-                    info = cf.constant_pool.get(ldc_idx);
-                    tag = info.getTag();
-
-                    if (tag == ConstantPool.CONSTANT_Long) {
-                        Long val = new Long(((ConstantPool.CONSTANT_Long_info) info).value);
-
-                        if (constant_pool.contains(val)) {
-                            tmp.append(constant_pool.indexOf(val));
-                        } else {
-                            constant_pool.add(val);
-                            tmp.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(";; LONG:: \"" + val + "\"");
-                    } else {
-                        Double val = new Double(((ConstantPool.CONSTANT_Double_info) info).value);
-
-                        if (constant_pool.contains(val)) {
-                            tmp.append(constant_pool.indexOf(val));
-                        } else {
-                            constant_pool.add(val);
-                            tmp.append(constant_pool.size() - 1); // zero-based indices
-                        }
-                        tmp2.append(";; DOUBLE:: \"" + val + "\"");
-                    }
-                    break;
-
-
-                /* Non-standard bytecode
-                 * Varies machine to machine
-                 * We throw them away */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IMPDEP1:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.IMPDEP2:
-                    System.out.println("IMPDEP!!!");
-                    return null;
-
-                /* following are added by hanbing */
-                /* invokeinterface <returntype> <methodClass>.<methodname>(<param>*) */
-                /* (invokeinterface byte[] com.ibm.toad.cfparse.instruction.BaseInstruction.getCode(int[], int) #3 #0 )) */
-                /* (JVM::ldc2_w 3)  3 points to the LONG object 837462398 */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.INVOKEINTERFACE: {
-                    tok = new StringTokenizer(inst0.toString().trim());
-                    tmp.append(tok.nextToken()); // opcode
-                    String iMethodReturnType = tok.nextToken();
-                    String iMethod = tok.nextToken("(");
-                    String iMethodClassName = iMethod.substring(0, iMethod.lastIndexOf(".")).trim();
-                    String iMethodName = iMethod.substring(iMethod.lastIndexOf(".") + 1).trim();
-                    if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
-                        byte[] iinstCode = inst0.getCode(null, 0);
-                        assert iinstCode.length == 5;
-                        int imethRefOffs = ((iinstCode[1] & 0xFF) << 8) | (iinstCode[2] & 0xFF);
-                        ConstantPool.CONSTANT_InterfaceMethodref_info infoInterfaceMethodref
-                                = (ConstantPool.CONSTANT_InterfaceMethodref_info) cf.constant_pool.get(imethRefOffs);
-                        String imethType = cf.constant_pool.getNameAndTypeInfo(infoInterfaceMethodref.name_and_type_index).getType();
-                        iMethodName += ":" + imethType;
-                    }
-                    Vector iparams = new Vector();
-                    String irawparams = tok.nextToken(")");
-                    /* trim off the outer parens */
-
-                    irawparams = irawparams.substring(1, irawparams.length());
-                    if (irawparams.compareTo("") == 0) {
-                    } else {
-                        StringTokenizer itok = new StringTokenizer(irawparams);
-                        while (itok.hasMoreTokens()) {
-                            iparams.addElement(itok.nextToken(",").trim());
-                        }
-                    }
-
-                    tok.nextToken("#"); // skip
-                    String tc = tok.nextToken(" ");
-
-                    switch (targetModel) {
-                        case M5:
-                            tmp.append(" " + makeMethodCP(iMethodName, iMethodClassName, iparams, iMethodReturnType, targetModel) + " " + tc.substring(1));
-                            break;
-                        case M6:
-                            tmp.append("\n\t\t\t\t\t"
-                                    + makeMethodCP(iMethodName, iMethodClassName, iparams, iMethodReturnType, targetModel)
-                                    + ") " + tc.substring(1));
-                            break;
-                    }
-                }
+        switch (targetModel) {
+            case M5:
+                tmp.append(")");
                 break;
-
-                case com.ibm.toad.cfparse.instruction.JVMConstants.CHECKCAST: {
-                    tok = new StringTokenizer(inst0.toString().trim());
-                    tmp.append(tok.nextToken());
-                    String castType = tok.nextToken();
-                    tmp.append(" " + ACL2utils.JavaTypeStrToACL2TypeStr(castType));
-                }
+            case M6:
+                tmp.append("))");
                 break;
-
-                case com.ibm.toad.cfparse.instruction.JVMConstants.PUTSTATIC:
-                case com.ibm.toad.cfparse.instruction.JVMConstants.GETSTATIC: {
-                    tok = new StringTokenizer(inst0.toString().trim());
-                    buf.append(tok.nextToken()); // the opcode
-
-                    String sfieldTypeName = tok.nextToken();             // throw away the data type
-                    String sfield = tok.nextToken();
-                    String sfieldClassName = sfield.substring(0, sfield.lastIndexOf("."));
-                    String sfieldName = sfield.substring(sfield.lastIndexOf(".") + 1);
-                    if (targetModel == Target.M5 && ACL2utils.NAME_AND_TYPE) {
-                        byte[] instCode = inst0.getCode(null, 0);
-                        assert instCode.length == 3;
-                        int sfieldRefOffs = ((instCode[1] & 0xFF) << 8) | (instCode[2] & 0xFF);
-                        ConstantPool.CONSTANT_Fieldref_info infoFieldref
-                                = (ConstantPool.CONSTANT_Fieldref_info) cf.constant_pool.get(sfieldRefOffs);
-                        String sfieldType = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index).getType();
-                        sfieldName += ":" + sfieldType;
-                    }
-
-                    buf.append(" " + makeFieldCP(sfieldName, sfieldClassName, sfieldTypeName, targetModel));
-                    tmp.append(buf.toString());
-                }
-                break;
-
-                /*	  lookupswitch  <count>  <(key target)>* default */
-                case com.ibm.toad.cfparse.instruction.JVMConstants.LOOKUPSWITCH: { /* for pupose of type checking, we only need to collect two list 
-                     * key list and target list, we don't really care how those values are used.
-                     * but have a execution model in ACL2 in mind. 
-                     * I would chose to have a representation closer to the real JVM.  */
-
-                    tok = new StringTokenizer(inst0.toString().trim());
-                    tmp.append(tok.nextToken()); // the opcode
-
-                    String defaultt = tok.nextToken().trim(); // the default target
-                    buf.append(defaultt);
-
-                    String count = tok.nextToken().substring(1).trim(); // the pair count
-                    int c = Integer.parseInt(count);
-
-                    buf.append(" " + count);
-
-                    buf.append(" (");
-                    for (int i = 0; i < c; i++) {
-                        String curpair = tok.nextToken(")").trim() + ")";
-
-                        int start = curpair.indexOf('#') + 1;
-                        int end = curpair.indexOf(',');
-                        String key = curpair.substring(start, end);
-
-                        start = curpair.indexOf(' ') + 1;
-                        end = curpair.indexOf(')');
-                        String target = curpair.substring(start, end);
-                        buf.append("(" + key + " . " + target + ") ");
-                    }
-                    buf.setCharAt(buf.length() - 1, ')');
-                    tmp.append(" (lookupswitchinfo " + buf.toString() + ")");
-                }
-                break;
-
-                case com.ibm.toad.cfparse.instruction.JVMConstants.TABLESWITCH: {
-                    tok = new StringTokenizer(inst0.toString().trim());
-                    tmp.append(tok.nextToken()); // the opcode
-
-                    String tabledefault = tok.nextToken().trim(); // the default target
-                    buf.append(tabledefault);
-
-                    String range = tok.nextToken();
-
-                    int s = range.indexOf('#') + 1;
-                    int e = range.lastIndexOf('-');
-                    String low = range.substring(s, e);
-
-                    int start = range.lastIndexOf('#') + 1;
-                    String high = range.substring(start);
-
-                    int l = Integer.parseInt(low);
-                    int h = Integer.parseInt(high);
-
-                    buf.append(" (" + low + " . " + high + ")");
-
-                    buf.append(" (");
-                    for (int i = 0; i < h - l + 1; i++) {
-                        String target = tok.nextToken().trim();
-                        buf.append(target + " ");
-                    }
-                    buf.setCharAt(buf.length() - 1, ')');
-                    tmp.append(" (tableswitchinfo " + buf.toString() + ")");
-                }
-                break;
-                default:
-                    tmp.append("<unsupported> " + inst0.toString());
-            }
-
-            switch (targetModel) {
-                case M5:
-                    tmp.append(")");
-                    break;
-                case M6:
-                    tmp.append("))");
-                    break;
-            }
         }
         // round the line length to multiple of 20.
         if (!tmp2.equals("")) {
