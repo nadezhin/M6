@@ -620,83 +620,39 @@ public class M6Method {
         }
     }
 
-    private static String makeClassCP_1(String jtype, Target target) {
-        switch (target) {
-            case M5:
-                return "\"" + jtype + "\"";
-            case M6:
-                return ACL2utils.ClassInfoToACL2TypeStr(jtype);
-        }
-        throw new AssertionError();
-    }
-
-    private static String makeClassCP(String jtype, Target target) {
-        switch (target) {
-            case M5:
-                return "\"" + jtype + "\"";
-            case M6:
-                return ACL2utils.JavaTypeStrToACL2TypeStr(jtype);
-        }
-        throw new AssertionError();
-    }
-
-    private static String makeFieldCP(String n, String cn, String rt, Target target) {
-        switch (target) {
-            case M5:
-                if (ACL2utils.NAME_AND_TYPE) {
-                    return "\"" + cn + "\" \"" + n + "\"";
-                } else {
-                    return "\"" + cn + "\" \"" + n + "\" " + (rt.equals("long") || rt.equals("double") ? "t" : "nil");
-                }
-            case M6:
-                return "(fieldCP \"" + n + "\" \"" + cn + "\" " + makeClassCP(rt, target) + ")";
-        }
-        throw new AssertionError();
-    }
-
-    private static String makeMethodCP(String n, String cn, List<String> params, String rt, Target target) {
-        StringBuffer buf = new StringBuffer();
-        switch (target) {
-            case M5:
-                buf.append("\"" + cn + "\" \"" + n + "\" " + params.size());
-                break;
-            case M6:
-                buf.append("(methodCP \"" + n + "\" \"" + cn + "\" (");
-
-                for (int i = 0; i < params.size(); i++) {
-                    buf.append(makeClassCP((String) params.get(i), target));
-                    if (i < params.size() - 1) {
-                        buf.append(" ");
-                    }
-                }
-                buf.append(") ");
-                buf.append(makeClassCP(rt, target));
-                break;
-        }
-        return buf.toString();
-    }
-
-    class ParseVisitor implements Instruction.KindVisitor<String, Map<Integer, Integer>> {
+    abstract class ParseVisitor implements Instruction.KindVisitor<String, Void> {
 
         private final Target target;
         private final List constant_pool;
-        private final StringBuffer tmp2;
+        final Map<Integer, Integer> labels;
+        private final StringBuilder tmp2;
 
-        ParseVisitor(Target target, List constant_pool, StringBuffer tmp2) {
+        ParseVisitor(Target target, List constant_pool, Map<Integer, Integer> labels, StringBuilder tmp2) {
             this.target = target;
             this.constant_pool = constant_pool;
+            this.labels = labels;
             this.tmp2 = tmp2;
         }
 
+        abstract String label(int brLabel);
+
+        abstract String makeClassCP(ConstantPool.CONSTANT_Class_info infoClass) throws ConstantPoolException;
+
+        abstract String makeFieldCP(ConstantPool.CONSTANT_Fieldref_info infoFieldref) throws ConstantPoolException;
+
+        abstract String makeMethodCP(ConstantPool.CONSTANT_Class_info infoClass,
+                ConstantPool.CONSTANT_NameAndType_info infoNameAndType)
+                throws ConstantPoolException, DescriptorException;
+
         @Override
-        public String visitNoOperands(Instruction instr, Map<Integer, Integer> labels) {
+        public String visitNoOperands(Instruction instr, Void p) {
             StringBuilder sb = new StringBuilder();
             return sb.append(instr.getMnemonic())
                     .toString();
         }
 
         @Override
-        public String visitArrayType(Instruction instr, Instruction.TypeKind tk, Map<Integer, Integer> labels) {
+        public String visitArrayType(Instruction instr, Instruction.TypeKind tk, Void p) {
             StringBuilder sb = new StringBuilder();
             return sb.append(instr.getMnemonic())
                     .append(' ')
@@ -705,17 +661,16 @@ public class M6Method {
         }
 
         @Override
-        public String visitBranch(Instruction instr, int offset, Map<Integer, Integer> labels) {
+        public String visitBranch(Instruction instr, int offset, Void p) {
             StringBuilder sb = new StringBuilder();
-            int brLabel = instr.getPC() + offset;
             return sb.append(instr.getMnemonic())
-                    .append(" TAG_")
-                    .append(labels.get(brLabel))
+                    .append(' ')
+                    .append(label(instr.getPC() + offset))
                     .toString();
         }
 
         @Override
-        public String visitConstantPoolRef(Instruction instr, int index, Map<Integer, Integer> labels) {
+        public String visitConstantPoolRef(Instruction instr, int index, Void p) {
             StringBuilder sb = new StringBuilder();
             sb.append(instr.getMnemonic()).append(' ');
             try {
@@ -768,11 +723,12 @@ public class M6Method {
                                 .append("\"");
                         break;
                     case ConstantPool.CONSTANT_Class:
+                        infoClass = (ConstantPool.CONSTANT_Class_info) info;
                         switch (instr.getOpcode()) {
                             case LDC:
                             case LDC_W:
                             case LDC2_W:
-                                M6Class.ClassRef valClass = new M6Class.ClassRef(((ConstantPool.CONSTANT_Class_info) info).getName().replace('/', '.'));
+                                M6Class.ClassRef valClass = new M6Class.ClassRef(infoClass.getName().replace('/', '.'));
                                 if (constant_pool.contains(valClass)) {
                                     sb.append(constant_pool.indexOf(valClass));
                                 } else {
@@ -782,8 +738,7 @@ public class M6Method {
                                 tmp2.append(";;CLASS:: \"" + valClass + "\"");
                                 break;
                             default:
-                                infoClass = (ConstantPool.CONSTANT_Class_info) info;
-                                sb.append(makeClassCP_1(infoClass.getName().replace('/', '.'), target));
+                                sb.append(makeClassCP(infoClass));
                         }
                         break;
                     case ConstantPool.CONSTANT_String:
@@ -799,36 +754,7 @@ public class M6Method {
                     case ConstantPool.CONSTANT_Fieldref:
                         ConstantPool.CONSTANT_Fieldref_info infoFieldref
                                 = (ConstantPool.CONSTANT_Fieldref_info) info;
-                        infoClass = cf.constant_pool.getClassInfo(infoFieldref.class_index);
-                        infoNameAndType = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index);
-                        switch (target) {
-                            case M5:
-                                sb.append("\"")
-                                        .append(infoClass.getName().replace('/', '.'))
-                                        .append("\" \"")
-                                        .append(infoNameAndType.getName());
-                                if (ACL2utils.NAME_AND_TYPE) {
-                                    sb.append(':')
-                                            .append(infoNameAndType.getType())
-                                            .append("\"");
-                                } else {
-                                    sb.append("\"");
-                                    if (infoNameAndType.getType().equals("J")
-                                            || infoNameAndType.getType().equals("D")) {
-                                        sb.append(" t");
-                                    }
-                                }
-                                break;
-                            case M6:
-                                sb.append("(fieldCP \"")
-                                        .append(infoNameAndType.getName())
-                                        .append("\" \"")
-                                        .append(infoClass.getName().replace('/', '.'))
-                                        .append("\" ")
-                                        .append(makeClassCP_1(infoNameAndType.getType(), target))
-                                        .append(')');
-                                break;
-                        }
+                        sb.append(makeFieldCP(infoFieldref));
                         break;
                     case ConstantPool.CONSTANT_Methodref:
                     case ConstantPool.CONSTANT_InterfaceMethodref:
@@ -844,37 +770,14 @@ public class M6Method {
                             infoClass = cf.constant_pool.getClassInfo(infoMethodref.class_index);
                             infoNameAndType = cf.constant_pool.getNameAndTypeInfo(infoMethodref.name_and_type_index);
                         }
-                        Descriptor desc = new Descriptor(infoNameAndType.type_index);
                         switch (target) {
                             case M5:
-                                sb.append(' ');
-//                                buf.append("\"" + cn + "\" \"" + n + "\" " + params.size());
+                                sb.append(makeMethodCP(infoClass, infoNameAndType));
                                 break;
                             case M6:
                                 sb.setLength(sb.length() - 1);
                                 sb.append("\n\t\t\t\t\t")
-                                        .append("(methodCP \"")
-                                        .append(infoNameAndType.getName())
-                                        .append("\" \"")
-                                        .append(infoClass.getName().replace('/', '.'))
-                                        .append("\" (");
-
-                                int paramCount = desc.getParameterCount(cf.constant_pool);
-                                if (paramCount > 0) {
-                                    String paramTypes = desc.getParameterTypes(cf.constant_pool);
-                                    assert paramTypes.charAt(0) == '(' && paramTypes.charAt(paramTypes.length() - 1) == ')';
-                                    String[] params = paramTypes.substring(1, paramTypes.length() - 1).split(",");
-                                    assert params.length == paramCount;
-                                    for (int i = 0; i < paramCount; i++) {
-                                        sb.append(makeClassCP(params[i].trim(), target));
-                                        if (i < paramCount - 1) {
-                                            sb.append(' ');
-                                        }
-                                    }
-                                }
-                                sb.append(") ")
-                                        .append(makeClassCP(desc.getReturnType(cf.constant_pool), target))
-                                        .append(')');
+                                        .append(makeMethodCP(infoClass, infoNameAndType));
                                 break;
                         }
                         break;
@@ -888,7 +791,7 @@ public class M6Method {
         }
 
         @Override
-        public String visitConstantPoolRefAndValue(Instruction instr, int index, int value, Map<Integer, Integer> labels) {
+        public String visitConstantPoolRefAndValue(Instruction instr, int index, int value, Void p) {
             StringBuilder sb = new StringBuilder();
             sb.append(instr.getMnemonic())
                     .append(' ');
@@ -898,9 +801,7 @@ public class M6Method {
                 switch (info.getTag()) {
                     case ConstantPool.CONSTANT_Class:
                         infoClass = cf.constant_pool.getClassInfo(index);
-                        sb.append(instr.getMnemonic())
-                                .append(' ')
-                                .append(infoClass.getName())
+                        sb.append(makeClassCP((ConstantPool.CONSTANT_Class_info) info))
                                 .append(' ')
                                 .append(value);
                         break;
@@ -910,37 +811,17 @@ public class M6Method {
                         infoClass = cf.constant_pool.getClassInfo(infoInterfaceMethodref.class_index);
                         ConstantPool.CONSTANT_NameAndType_info infoNameAndType
                                 = cf.constant_pool.getNameAndTypeInfo(infoInterfaceMethodref.name_and_type_index);
-                        Descriptor desc = new Descriptor(infoNameAndType.type_index);
                         switch (target) {
                             case M5:
-                                sb.append(' ');
-//                                buf.append("\"" + cn + "\" \"" + n + "\" " + params.size());
+                                sb.append(makeMethodCP(infoClass, infoNameAndType))
+                                        .append(' ')
+                                        .append(value);
                                 break;
                             case M6:
                                 sb.setLength(sb.length() - 1);
                                 sb.append("\n\t\t\t\t\t")
-                                        .append("(methodCP \"")
-                                        .append(infoNameAndType.getName())
-                                        .append("\" \"")
-                                        .append(infoClass.getName().replace('/', '.'))
-                                        .append("\" (");
-
-                                int paramCount = desc.getParameterCount(cf.constant_pool);
-                                if (paramCount > 0) {
-                                    String paramTypes = desc.getParameterTypes(cf.constant_pool);
-                                    assert paramTypes.charAt(0) == '(' && paramTypes.charAt(paramTypes.length() - 1) == ')';
-                                    String[] params = paramTypes.substring(1, paramTypes.length() - 1).split(",");
-                                    assert params.length == paramCount;
-                                    for (int i = 0; i < paramCount; i++) {
-                                        sb.append(makeClassCP(params[i].trim(), target));
-                                        if (i < paramCount - 1) {
-                                            sb.append(' ');
-                                        }
-                                    }
-                                }
-                                sb.append(") ")
-                                        .append(makeClassCP(desc.getReturnType(cf.constant_pool), target))
-                                        .append(") ")
+                                        .append(makeMethodCP(infoClass, infoNameAndType))
+                                        .append(' ')
                                         .append(value);
                                 break;
                         }
@@ -953,7 +834,7 @@ public class M6Method {
         }
 
         @Override
-        public String visitLocal(Instruction instr, int index, Map<Integer, Integer> labels) {
+        public String visitLocal(Instruction instr, int index, Void p) {
             StringBuilder sb = new StringBuilder();
             return sb.append(instr.getMnemonic()/*.replace("_w", "")*/)
                     .append(' ')
@@ -962,7 +843,7 @@ public class M6Method {
         }
 
         @Override
-        public String visitLocalAndValue(Instruction instr, int index, int value, Map<Integer, Integer> labels) {
+        public String visitLocalAndValue(Instruction instr, int index, int value, Void p) {
             StringBuilder sb = new StringBuilder();
             return sb.append(instr.getMnemonic().replace("_w", ""))
                     .append(' ')
@@ -973,21 +854,19 @@ public class M6Method {
         }
 
         @Override
-        public String visitLookupSwitch(Instruction instr, int default_, int npairs, int[] matches, int[] offsets, Map<Integer, Integer> labels) {
+        public String visitLookupSwitch(Instruction instr, int default_, int npairs, int[] matches, int[] offsets, Void p) {
             StringBuilder sb = new StringBuilder();
-            int brLabel = instr.getPC() + default_;
             sb.append(instr.getMnemonic()) // the opcode
-                    .append(" (lookupswitchinfo TAG_")
-                    .append(labels.get(brLabel)) // the default target
+                    .append(" (lookupswitchinfo ")
+                    .append(label(instr.getPC() + default_)) // the default target
                     .append(' ')
                     .append(npairs) // the pair count
                     .append(" (");
             for (int i = 0; i < npairs; i++) {
-                brLabel = instr.getPC() + offsets[i];
                 sb.append('(')
                         .append(matches[i])
-                        .append(" . TAG_")
-                        .append(labels.get(brLabel))
+                        .append(" . ")
+                        .append(label(instr.getPC() + offsets[i]))
                         .append(") ");
             }
             sb.setCharAt(sb.length() - 1, ')');
@@ -996,21 +875,18 @@ public class M6Method {
         }
 
         @Override
-        public String visitTableSwitch(Instruction instr, int default_, int low, int high, int[] offsets, Map<Integer, Integer> labels) {
+        public String visitTableSwitch(Instruction instr, int default_, int low, int high, int[] offsets, Void p) {
             StringBuilder sb = new StringBuilder();
-            int brLabel = instr.getPC() + default_;
             sb.append(instr.getMnemonic()) // the opcode
-                    .append(" (tableswitchinfo TAG_")
-                    .append(labels.get(brLabel)) // the default target
+                    .append(" (tableswitchinfo ")
+                    .append(label(instr.getPC() + default_)) // the default target
                     .append(" (")
                     .append(low)
                     .append(" . ")
                     .append(high)
                     .append(") (");
             for (int i = 0; i < high - low + 1; i++) {
-                brLabel = instr.getPC() + offsets[i];
-                sb.append("TAG_")
-                        .append(labels.get(brLabel))
+                sb.append(label(instr.getPC() + offsets[i]))
                         .append(' ');
             }
             sb.setCharAt(sb.length() - 1, ')');
@@ -1019,7 +895,7 @@ public class M6Method {
         }
 
         @Override
-        public String visitValue(Instruction instr, int value, Map<Integer, Integer> labels) {
+        public String visitValue(Instruction instr, int value, Void p) {
             StringBuilder sb = new StringBuilder();
             return sb.append(instr.getMnemonic())
                     .append(' ')
@@ -1028,8 +904,248 @@ public class M6Method {
         }
 
         @Override
-        public String visitUnknown(Instruction instr, Map<Integer, Integer> labels) {
+        public String visitUnknown(Instruction instr, Void p) {
             return "bytecode " + instr.getOpcode();
+        }
+    }
+
+    class ParseVisitorM5 extends ParseVisitor {
+
+        ParseVisitorM5(List constant_pool, Map<Integer, Integer> labels, StringBuilder tmp2) {
+            super(Target.M5, constant_pool, labels, tmp2);
+        }
+
+        @Override
+        String label(int brLabel) {
+            return Integer.toString(brLabel);
+        }
+
+        @Override
+        String makeClassCP(ConstantPool.CONSTANT_Class_info infoClass)
+                throws ConstantPoolException {
+            return "\"" + infoClass.getName().replace('/', '.') + "\"";
+        }
+
+        @Override
+        String makeFieldCP(ConstantPool.CONSTANT_Fieldref_info infoFieldref)
+                throws ConstantPoolException {
+            StringBuilder sb = new StringBuilder();
+            ConstantPool.CONSTANT_Class_info infoClass
+                    = cf.constant_pool.getClassInfo(infoFieldref.class_index);
+            ConstantPool.CONSTANT_NameAndType_info infoNameAndType
+                    = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index);
+            if (ACL2utils.NAME_AND_TYPE) {
+                sb.append("\"")
+                        .append(infoClass.getName().replace('/', '.'))
+                        .append("\" \"")
+                        .append(infoNameAndType.getName())
+                        .append(':')
+                        .append(infoNameAndType.getType())
+                        .append("\"");
+            } else {
+                sb.append("\"")
+                        .append(infoClass.getName().replace('/', '.'))
+                        .append("\" \"")
+                        .append(infoNameAndType.getName())
+                        .append("\"");
+                switch (infoNameAndType.getType()) {
+                    case "J":
+                    case "D":
+                        sb.append(" t");
+                        break;
+                }
+            }
+            return sb.toString();
+        }
+
+        @Override
+        String makeMethodCP(ConstantPool.CONSTANT_Class_info infoClass,
+                ConstantPool.CONSTANT_NameAndType_info infoNameAndType)
+                throws ConstantPoolException, DescriptorException {
+            StringBuilder sb = new StringBuilder();
+
+            sb.append("\"")
+                    .append(infoClass.getName().replace('/', '.'))
+                    .append("\" \"")
+                    .append(infoNameAndType.getName());
+            if (ACL2utils.NAME_AND_TYPE) {
+                sb.append(':').append(infoNameAndType.getType());
+            }
+            int paramCount = new Descriptor(infoNameAndType.type_index)
+                    .getParameterCount(cf.constant_pool);
+            return sb.append("\" ")
+                    .append(paramCount)
+                    .toString();
+        }
+    }
+
+    class ParseVisitorM6 extends ParseVisitor {
+
+        ParseVisitorM6(List constant_pool, Map<Integer, Integer> labels, StringBuilder tmp2) {
+            super(Target.M6, constant_pool, labels, tmp2);
+        }
+
+        @Override
+        String label(int brLabel) {
+            return "TAG_" + labels.get(brLabel);
+        }
+
+        @Override
+        String makeClassCP(ConstantPool.CONSTANT_Class_info infoClass)
+                throws ConstantPoolException {
+            String className = infoClass.getName();
+            if (className.startsWith("[")) {
+                return "(array " + makeTypeCP(className.substring(1)) + ")";
+            } else {
+                return "(class \"" + className.replace('/', '.') + "\")";
+            }
+        }
+
+        private String makeTypeCP(String type)
+                throws ConstantPoolException {
+            type = type.replace('/', '.');
+            int c = 0;
+            if (type.startsWith("[")) {
+                c = type.lastIndexOf("[") + 1;
+                assert c > 0;
+                type = type.substring(c);
+            }
+            switch (type) {
+                case "V":
+                    type = "void";
+                    break;
+                case "Z":
+                    type = "boolean";
+                    break;
+                case "B":
+                    type = "byte";
+                    break;
+                case "C":
+                    type = "char";
+                    break;
+                case "S":
+                    type = "short";
+                    break;
+                case "I":
+                    type = "int";
+                    break;
+                case "J":
+                    type = "long";
+                    break;
+                case "F":
+                    type = "float";
+                    break;
+                case "D":
+                    type = "double";
+                    break;
+                default:
+                    assert type.startsWith("L") && type.endsWith(";");
+                    type = type.substring(1, type.length() - 1);
+                    type = "(class \"" + type + "\")";
+            }
+            while (c > 0) {
+                type = "(array " + type + ")";
+                c--;
+            }
+            return type;
+        }
+
+        private String classInfo2(ConstantPool.CONSTANT_Class_info infoClass)
+                throws ConstantPoolException {
+            String name = infoClass.getName().replace('/', '.');
+            if (name.startsWith("[")) {
+                int c = name.lastIndexOf("[") + 1;
+                assert c > 0;
+                name = name.substring(c);
+                switch (name) {
+                    case "Z":
+                        name = "boolean";
+                        break;
+                    case "B":
+                        name = "byte";
+                        break;
+                    case "C":
+                        name = "char";
+                        break;
+                    case "S":
+                        name = "short";
+                        break;
+                    case "I":
+                        name = "int";
+                        break;
+                    case "J":
+                        name = "long";
+                        break;
+                    case "F":
+                        name = "float";
+                        break;
+                    case "D":
+                        name = "double";
+                        break;
+                    default:
+                        assert name.startsWith("L") && name.endsWith(";");
+                        name = name.substring(1, name.length() - 1);
+                }
+                while (c > 0) {
+                    name += "[]";
+                    c--;
+                }
+            }
+            return "\"" + name + "\"";
+        }
+
+        @Override
+        String makeFieldCP(ConstantPool.CONSTANT_Fieldref_info infoFieldref)
+                throws ConstantPoolException {
+            StringBuilder sb = new StringBuilder();
+            ConstantPool.CONSTANT_Class_info infoClass
+                    = cf.constant_pool.getClassInfo(infoFieldref.class_index);
+            ConstantPool.CONSTANT_NameAndType_info infoNameAndType
+                    = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index);
+            return sb.append("(fieldCP \"")
+                    .append(infoNameAndType.getName())
+                    .append("\" \"")
+                    .append(infoClass.getName().replace('/', '.'))
+                    .append("\" ")
+                    .append(makeTypeCP(cf.constant_pool.getUTF8Value(infoNameAndType.type_index)))
+                    .append(')')
+                    .toString();
+        }
+
+        @Override
+        String makeMethodCP(ConstantPool.CONSTANT_Class_info infoClass,
+                ConstantPool.CONSTANT_NameAndType_info infoNameAndType)
+                throws ConstantPoolException {
+            StringBuilder sb = new StringBuilder();
+            sb.append("(methodCP \"")
+                    .append(infoNameAndType.getName())
+                    .append("\" ")
+                    .append(classInfo2(infoClass))
+                    .append(" (");
+            String type = cf.constant_pool.getUTF8Value(infoNameAndType.type_index);
+            int ind = type.indexOf(')');
+            assert type.startsWith("(") && ind > 0;
+            String params = type.substring(1, ind);
+            while (!params.isEmpty()) {
+                int i = 0;
+                while (params.charAt(i) == '[') {
+                    i++;
+                }
+                if (params.charAt(i) == 'L') {
+                    i = params.indexOf(';') + 1;
+                } else {
+                    i++;
+                }
+                sb.append(makeTypeCP(params.substring(0, i)));
+                params = params.substring(i);
+                if (!params.isEmpty()) {
+                    sb.append(' ');
+                }
+            }
+            return sb.append(") ")
+                    .append(makeTypeCP(type.substring(ind + 1)))
+                    .append(')')
+                    .toString();
         }
     }
 
@@ -1040,19 +1156,26 @@ public class M6Method {
             Map<Integer, Integer> labels,
             Target targetModel) throws ConstantPoolException {
         StringBuffer tmp = new StringBuffer();
-        StringBuffer tmp2 = new StringBuffer();
+        StringBuilder tmp2 = new StringBuilder();
 
-        ParseVisitor parseVisitor = new ParseVisitor(targetModel, constant_pool, tmp2);
+        ParseVisitor parseVisitor;
+        switch (targetModel) {
+            case M5:
+                parseVisitor = new ParseVisitorM5(constant_pool, labels, tmp2);
+                break;
+            case M6:
+                parseVisitor = new ParseVisitorM6(constant_pool, labels, tmp2);
+                break;
+            default:
+                throw new AssertionError();
+        }
 //        System.out.println(inst.toString());
 
         switch (targetModel) {
             case M5:
                 tmp.append("(");
                 if (labels.containsKey(inst.getPC())) {
-                    String label = "TAG_" + labels.get(inst.getPC());
-                    tmp.append("LABEL::").append(label).append(" ");
-                    tagTable.put(label, new Integer(offset));
-                    tmp2.append(";;at " + label);
+                    tmp2.append(";;at " + inst.getPC());
                 }
                 break;
             case M6:
@@ -1065,7 +1188,7 @@ public class M6Method {
                 break;
         }
 
-        tmp.append(inst.accept(parseVisitor, labels));
+        tmp.append(inst.accept(parseVisitor, null));
 
         switch (targetModel) {
             case M5:
