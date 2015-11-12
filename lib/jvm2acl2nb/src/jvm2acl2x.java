@@ -11,9 +11,9 @@ import java.io.*;
 
 public class jvm2acl2x {
 
-    private static final Target TARGET = Target.M6;
     private static boolean abstract_mode = false;
     private static boolean keep_lntlvt = false;
+    private static Target target = Target.M6;
 
     private static String defaultpath = "/var/local/";
 
@@ -98,6 +98,15 @@ public class jvm2acl2x {
             }
         }
 
+        if (args[start].equals("-5")) {
+            target = Target.M5;
+            start++;
+            if (args.length - start < 2) {
+                System.err.println(usage);
+                System.exit(0);
+            }
+        }
+
         if (args[start].equals("-d")) {
             start++;
             if (args.length - start < 3) {
@@ -125,7 +134,7 @@ public class jvm2acl2x {
         //  processFiles(output, input);
     }
 
-    private static String processOneFile(String classfn, String pathn, StringBuffer table, Target target) {
+    private static String processOneFile(String classfn, String pathn, StringBuffer table) {
         try {
             M6Class curClass = new M6Class(classfn);
             curClass.processClassFile(target);
@@ -140,7 +149,7 @@ public class jvm2acl2x {
             switch (target) {
                 case M5:
                     ctBuf.append("(in-package \"M5\")\n");
-                    ctBuf.append("(include-book \"models/jvm/m5/utilities\" :dir :system)\n\n");
+                    ctBuf.append("(include-book \"models/jvm/m5/m5\" :dir :system)\n\n");
                     ctBuf.append("\n");
                     ctBuf.append("(defconst *" + classname + "*\n");
                     ctBuf.append(curClass.toString(4, target));
@@ -196,7 +205,7 @@ public class jvm2acl2x {
         /* We parse each of the classfiles in order */
         for (int i = 0; i < args.length; i++) {
             try {
-                String classname = processOneFile(args[i], tablepath, ctBuf2, TARGET);
+                String classname = processOneFile(args[i], tablepath, ctBuf2);
                 ctBuf.append("(ld \"*" + classname + "*.lisp\")\n");
 
                 int offset = classname.lastIndexOf('.');

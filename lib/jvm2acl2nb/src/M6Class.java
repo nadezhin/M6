@@ -343,8 +343,19 @@ public class M6Class {
         switch (target) {
             case M5:
                 buf.append(pad + "(make-class-decl\n");
-                buf.append(pad + " \"" + name + "\"\n");
-                buf.append(pad + " '(\"" + super_name + "\")\n");
+                if (ACL2utils.NAME_AND_TYPE) {
+                    buf.append(pad + " \""
+                            + cf.constant_pool.getUTF8Value(cf.constant_pool.getClassInfo(cf.this_class).name_index) + "\"\n");
+                    if (cf.super_class != 0) {
+                        buf.append(pad + " '(\""
+                                + cf.constant_pool.getUTF8Value(cf.constant_pool.getClassInfo(cf.super_class).name_index) + "\")\n");
+                    } else {
+                        buf.append(pad + " ())");
+                    }
+                } else {
+                    buf.append(pad + " \"" + name + "\"\n");
+                    buf.append(pad + " '(\"" + super_name + "\")\n");
+                }
 
                 buf.append(pad + " '(");
                 for (int j = 0; j < fields.size(); j++) {
@@ -352,7 +363,7 @@ public class M6Class {
                     if (f.field.access_flags.is(AccessFlags.ACC_STATIC)) {
                         continue;
                     }
-                    buf.append("\n" + f.toString(lmargin + 20, target));
+                    buf.append("\n" + f.toString(lmargin + 2, target));
                 }
                 buf.append(")\n");
 
@@ -362,13 +373,13 @@ public class M6Class {
                     if (!f.field.access_flags.is(AccessFlags.ACC_STATIC)) {
                         continue;
                     }
-                    buf.append("\n" + f.toString(lmargin + 20, target));
+                    buf.append("\n" + f.toString(lmargin + 2, target));
                 }
                 buf.append(")\n");
 
                 buf.append(pad + " '(");
                 if (constant_pool.size() > 0) {
-                    buf.append("\n" + cpToString(lmargin + 20, constant_pool, target));
+                    buf.append("\n" + cpToString(lmargin + 2, constant_pool, target));
                 }
                 buf.append("\n" + pad + " )\n");
 

@@ -290,40 +290,35 @@ public class M6Method {
                             .append(name)
                             .append(":")
                             .append(desc)
-                            .append("\" (");
+                            .append("\"");
                 } else {
                     buf.append(pad + "'(\"" + name + "\" (");
+                    for (int i = 0; i < params.size(); i++) {
+                        buf.append(params.get(i));
+
+                        if (i < (params.size() - 1)) {
+                            buf.append(" ");
+                        }
+                    }
+                    buf.append(')');
                 }
+                buf.append(' ');
+                buf.append((m.access_flags.is(AccessFlags.ACC_SYNCHRONIZED) ? "t" : "nil") + "\n");
                 break;
             case M6:
                 buf.append(pad + "(method \"" + name + "\"\n");
                 buf.append(pad + "      (parameters ");
-                break;
-        }
-        for (int i = 0; i < params.size(); i++) {
-            buf.append(params.get(i));
+                for (int i = 0; i < params.size(); i++) {
+                    buf.append(params.get(i));
 
-            if (i < (params.size() - 1)) {
-                buf.append(" ");
-            }
-        }
-        switch (target) {
-            case M5:
-                buf.append(") ");
-                buf.append((m.access_flags.is(AccessFlags.ACC_SYNCHRONIZED) ? "t" : "nil") + "\n");
-                break;
-            case M6:
+                    if (i < (params.size() - 1)) {
+                        buf.append(" ");
+                    }
+                }
                 buf.append(")\n");
                 buf.append(pad + "      (returntype . " + returntype + ")\n");
 
                 buf.append(accessflags.toString(lmargin + 6) + "\n");
-                break;
-        }
-
-        switch (target) {
-            case M5:
-                break;
-            case M6:
                 buf.append(pad + "      (code");
                 if (cai != null && !no_method_body) {
                     buf.append("\n" + pad + "           (max_stack . " + max_stack + ")"
@@ -634,7 +629,7 @@ public class M6Method {
             this.tmp2 = tmp2;
         }
 
-        abstract String label(int brLabel);
+        abstract String label(int pc, int offset);
 
         abstract String makeClassCP(ConstantPool.CONSTANT_Class_info infoClass) throws ConstantPoolException;
 
@@ -665,7 +660,7 @@ public class M6Method {
             StringBuilder sb = new StringBuilder();
             return sb.append(instr.getMnemonic())
                     .append(' ')
-                    .append(label(instr.getPC() + offset))
+                    .append(label(instr.getPC(), offset))
                     .toString();
         }
 
@@ -858,7 +853,7 @@ public class M6Method {
             StringBuilder sb = new StringBuilder();
             sb.append(instr.getMnemonic()) // the opcode
                     .append(" (lookupswitchinfo ")
-                    .append(label(instr.getPC() + default_)) // the default target
+                    .append(label(instr.getPC(), default_)) // the default target
                     .append(' ')
                     .append(npairs) // the pair count
                     .append(" (");
@@ -866,7 +861,7 @@ public class M6Method {
                 sb.append('(')
                         .append(matches[i])
                         .append(" . ")
-                        .append(label(instr.getPC() + offsets[i]))
+                        .append(label(instr.getPC(), offsets[i]))
                         .append(") ");
             }
             sb.setCharAt(sb.length() - 1, ')');
@@ -879,14 +874,14 @@ public class M6Method {
             StringBuilder sb = new StringBuilder();
             sb.append(instr.getMnemonic()) // the opcode
                     .append(" (tableswitchinfo ")
-                    .append(label(instr.getPC() + default_)) // the default target
+                    .append(label(instr.getPC(), default_)) // the default target
                     .append(" (")
                     .append(low)
                     .append(" . ")
                     .append(high)
                     .append(") (");
             for (int i = 0; i < high - low + 1; i++) {
-                sb.append(label(instr.getPC() + offsets[i]))
+                sb.append(label(instr.getPC(), offsets[i]))
                         .append(' ');
             }
             sb.setCharAt(sb.length() - 1, ')');
@@ -916,8 +911,8 @@ public class M6Method {
         }
 
         @Override
-        String label(int brLabel) {
-            return Integer.toString(brLabel);
+        String label(int pc, int offset) {
+            return Integer.toString(offset);
         }
 
         @Override
@@ -936,7 +931,7 @@ public class M6Method {
                     = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index);
             if (ACL2utils.NAME_AND_TYPE) {
                 sb.append("\"")
-                        .append(infoClass.getName().replace('/', '.'))
+                        .append(infoClass.getName())
                         .append("\" \"")
                         .append(infoNameAndType.getName())
                         .append(':')
@@ -964,12 +959,19 @@ public class M6Method {
                 throws ConstantPoolException, DescriptorException {
             StringBuilder sb = new StringBuilder();
 
-            sb.append("\"")
-                    .append(infoClass.getName().replace('/', '.'))
-                    .append("\" \"")
-                    .append(infoNameAndType.getName());
             if (ACL2utils.NAME_AND_TYPE) {
-                sb.append(':').append(infoNameAndType.getType());
+                sb.append("\"")
+                        .append(infoClass.getName())
+                        .append("\" \"")
+                        .append(infoNameAndType.getName())
+                        .append(':')
+                        .append(infoNameAndType.getType());
+            } else {
+                sb.append("\"")
+                        .append(infoClass.getName().replace('/', '.'))
+                        .append("\" \"")
+                        .append(infoNameAndType.getName());
+
             }
             int paramCount = new Descriptor(infoNameAndType.type_index)
                     .getParameterCount(cf.constant_pool);
@@ -986,8 +988,8 @@ public class M6Method {
         }
 
         @Override
-        String label(int brLabel) {
-            return "TAG_" + labels.get(brLabel);
+        String label(int pc, int offset) {
+            return "TAG_" + labels.get(pc + offset);
         }
 
         @Override
@@ -1174,9 +1176,9 @@ public class M6Method {
         switch (targetModel) {
             case M5:
                 tmp.append("(");
-                if (labels.containsKey(inst.getPC())) {
-                    tmp2.append(";;at " + inst.getPC());
-                }
+//                if (labels.containsKey(inst.getPC())) {
+                tmp2.append("; " + inst.getPC());
+//                }
                 break;
             case M6:
                 tmp.append("(" + offset + " (");
@@ -1198,9 +1200,27 @@ public class M6Method {
                 tmp.append("))");
                 break;
         }
-        // round the line length to multiple of 20.
+        // round the line length to multiple of 8.
         if (!tmp2.equals("")) {
-            int bc = 20 - tmp.length() % 20;
+            int pos;
+            switch (targetModel) {
+                case M5:
+
+                    pos = 56;
+                    while (pos <= tmp.length()) {
+                        pos += 8;
+                    }
+                    break;
+                case M6:
+                    pos = 20;
+                    while (pos <= tmp.length()) {
+                        pos += 20;
+                    }
+                    break;
+                default:
+                    throw new AssertionError();
+            }
+            int bc = pos - tmp.length();
             for (int j = 0; j < bc; j++) {
                 tmp.append(" ");
             }
