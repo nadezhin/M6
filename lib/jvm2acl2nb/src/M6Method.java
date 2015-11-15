@@ -723,14 +723,21 @@ public class M6Method {
                             case LDC:
                             case LDC_W:
                             case LDC2_W:
-                                M6Class.ClassRef valClass = new M6Class.ClassRef(infoClass.getName().replace('/', '.'));
+                                M6Class.ClassRef valClass = new M6Class.ClassRef(infoClass.getName());
                                 if (constant_pool.contains(valClass)) {
                                     sb.append(constant_pool.indexOf(valClass));
                                 } else {
                                     constant_pool.add(valClass);
                                     sb.append(constant_pool.size() - 1);  // zero-based indices
                                 }
-                                tmp2.append(";;CLASS:: \"" + valClass + "\"");
+                                switch (target) {
+                                    case M5:
+                                        tmp2.append(";;CLASS:: \"" + valClass + "\"");
+                                        break;
+                                    case M6:
+                                        tmp2.append(";;CLASS:: \"" + valClass.className.replace('/', '.') + "\"");
+                                        break;
+                                }
                                 break;
                             default:
                                 sb.append(makeClassCP(infoClass));

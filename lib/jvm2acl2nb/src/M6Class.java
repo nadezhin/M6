@@ -301,7 +301,7 @@ public class M6Class {
                         buf.append("(CLASS (REF -1) \"" + ((ClassRef) cp.get(i)).className + "\")");
                         break;
                     case M6:
-                        buf.append("(CLASS  \"" + ((ClassRef) cp.get(i)).className + "\")");
+                        buf.append("(CLASS  \"" + ((ClassRef) cp.get(i)).className.replace('/', '.') + "\")");
                         break;
                 }
             } else if (cp.get(i) instanceof Long) {
