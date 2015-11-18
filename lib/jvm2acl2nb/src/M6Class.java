@@ -350,7 +350,7 @@ public class M6Class {
                         buf.append(pad + " '(\""
                                 + cf.constant_pool.getUTF8Value(cf.constant_pool.getClassInfo(cf.super_class).name_index) + "\")\n");
                     } else {
-                        buf.append(pad + " ())");
+                        buf.append(pad + " ()\n");
                     }
                 } else {
                     buf.append(pad + " \"" + name + "\"\n");
