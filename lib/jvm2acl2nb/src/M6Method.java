@@ -631,6 +631,8 @@ public class M6Method {
 
         abstract String label(int pc, int offset);
 
+        abstract String typeKind(Instruction.TypeKind tk);
+
         abstract String makeClassCP(ConstantPool.CONSTANT_Class_info infoClass) throws ConstantPoolException;
 
         abstract String makeFieldCP(ConstantPool.CONSTANT_Fieldref_info infoFieldref) throws ConstantPoolException;
@@ -651,7 +653,7 @@ public class M6Method {
             StringBuilder sb = new StringBuilder();
             return sb.append(instr.getMnemonic())
                     .append(' ')
-                    .append(tk.name.toUpperCase())
+                    .append(typeKind(tk))
                     .toString();
         }
 
@@ -923,6 +925,11 @@ public class M6Method {
         }
 
         @Override
+        String typeKind(Instruction.TypeKind tk) {
+            return "T_" + tk.name.toUpperCase();
+        }
+
+        @Override
         String makeClassCP(ConstantPool.CONSTANT_Class_info infoClass)
                 throws ConstantPoolException {
             return "\"" + infoClass.getName().replace('/', '.') + "\"";
@@ -997,6 +1004,11 @@ public class M6Method {
         @Override
         String label(int pc, int offset) {
             return "TAG_" + labels.get(pc + offset);
+        }
+
+        @Override
+        String typeKind(Instruction.TypeKind tk) {
+            return tk.name.toUpperCase();
         }
 
         @Override
