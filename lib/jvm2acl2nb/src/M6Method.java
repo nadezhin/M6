@@ -987,8 +987,27 @@ public class M6Method {
                         .append(infoNameAndType.getName());
 
             }
-            int paramCount = new Descriptor(infoNameAndType.type_index)
-                    .getParameterCount(cf.constant_pool);
+            String type = cf.constant_pool.getUTF8Value(infoNameAndType.type_index);
+            int ind = type.indexOf(')');
+            assert type.startsWith("(") && ind > 0;
+            String params = type.substring(1, ind);
+            int paramCount = 0;
+            while (!params.isEmpty()) {
+                int i = 0;
+                while (params.charAt(i) == '[') {
+                    i++;
+                }
+                paramCount++;
+                if (params.charAt(i) == 'L') {
+                    i = params.indexOf(';') + 1;
+                } else {
+                    if (i == 0 && (params.charAt(i) == 'D' || params.charAt(i) == 'J')) {
+                        paramCount++;
+                    }
+                    i++;
+                }
+                params = params.substring(i);
+            }
             return sb.append("\" ")
                     .append(paramCount)
                     .toString();
