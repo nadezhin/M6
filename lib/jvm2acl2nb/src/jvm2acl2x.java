@@ -88,8 +88,6 @@ public class jvm2acl2x {
 
         if (args[start].equals("-g")) {
             keep_lntlvt = true;
-            M6Method.setKeepLntLvt();
-            M6Class.setKeepLntLvt();
 
             start++;
             if (args.length - start < 2) {
@@ -134,13 +132,13 @@ public class jvm2acl2x {
         //  processFiles(output, input);
     }
 
-    private static String processOneFile(String classfn, String pathn, StringBuffer table) {
+    private static String processOneFile(String classfn, String pathn) {
         try {
             M6Class curClass = new M6Class(classfn);
             curClass.processClassFile(target);
 
-            StringBuffer ctBuf = new StringBuffer();
-            String classname = curClass.getName();
+            StringBuilder ctBuf = new StringBuilder();
+            String classname = curClass.getJavaName();
 
             if (abstract_mode) {
                 classname = classname + "-abs";
@@ -154,7 +152,7 @@ public class jvm2acl2x {
                     ctBuf.append("(defconst *" + classname + "*\n");
                     ctBuf.append(curClass.toString(4, target));
                     ctBuf.append(")\n\n");
-                    writeToFile(pathn + "/" + classname + ".lisp", ctBuf);
+                    writeToFile(pathn + "/" + classname + ".lisp", ctBuf.toString());
                     break;
                 case M6:
                     ctBuf.append("(defconst *" + classname + "*\n");
@@ -162,7 +160,7 @@ public class jvm2acl2x {
                     ctBuf.append("  ");
                     ctBuf.append(curClass.toString(4, target));
                     ctBuf.append("))\n\n");
-                    writeToFile(pathn + "/*" + classname + "*.lisp", ctBuf);
+                    writeToFile(pathn + "/*" + classname + "*.lisp", ctBuf.toString());
                     break;
             }
 
@@ -179,9 +177,9 @@ public class jvm2acl2x {
     }
 
     private static void processFiles(String tname, String[] args) {
-        StringBuffer ctBuf = new StringBuffer();
-        StringBuffer ctBuf2 = new StringBuffer();
-        StringBuffer mapName2P = new StringBuffer();
+        StringBuilder ctBuf = new StringBuilder();
+        StringBuilder ctBuf2 = new StringBuilder();
+        StringBuilder mapName2P = new StringBuilder();
         String tablename, tablepath;
 
         if (tname.lastIndexOf('/') != -1) {
@@ -205,7 +203,7 @@ public class jvm2acl2x {
         /* We parse each of the classfiles in order */
         for (int i = 0; i < args.length; i++) {
             try {
-                String classname = processOneFile(args[i], tablepath, ctBuf2);
+                String classname = processOneFile(args[i], tablepath);
                 ctBuf.append("(ld \"*" + classname + "*.lisp\")\n");
 
                 int offset = classname.lastIndexOf('.');
@@ -223,7 +221,7 @@ public class jvm2acl2x {
                 }
                 ctBuf2.append("\n");
             } catch (java.lang.Exception e) {
-                System.err.println("Could not open file " + args[0] + " " + e);
+                System.err.println("Could not open file " + args[i] + " " + e);
                 System.exit(0);
             }
         }
@@ -234,13 +232,13 @@ public class jvm2acl2x {
         ctBuf.append("\n\n" + ctBuf2 + mapName2P);
 
         if (abstract_mode) {
-            writeToFile(tablepath + '/' + tablename + "-class-table-abs.lisp", ctBuf);
+            writeToFile(tablepath + '/' + tablename + "-class-table-abs.lisp", ctBuf.toString());
         } else {
-            writeToFile(tablepath + '/' + tablename + "-class-table.lisp", ctBuf);
+            writeToFile(tablepath + '/' + tablename + "-class-table.lisp", ctBuf.toString());
         }
     }
 
-    private static void writeToFile(String fn, StringBuffer ctBuf) {
+    private static void writeToFile(String fn, String ctBuf) {
         System.out.println("Writing state to file " + defaultpath + fn);
         try {
             FileWriter outfile = new FileWriter(defaultpath + fn);

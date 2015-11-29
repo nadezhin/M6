@@ -90,7 +90,7 @@ public class jvm2acl2 {
         /* The class table */
         for (int i = 0; i < classes.length; i++) {
 
-            String classname = classes[i].getName();
+            String classname = classes[i].getJavaName();
             switch (target) {
                 case M5:
                     ctBuf.append("(defconst *" + classname + "-class-decl*\n");

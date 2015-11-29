@@ -66,7 +66,7 @@ public class jvm2acl2a {
             curClass.processClassFile(Target.M6);
 
             StringBuffer ctBuf = new StringBuffer();
-            String classname = curClass.getName();
+            String classname = curClass.getJavaName();
 
             ctBuf.append("(defconst *" + classname + "*\n");
             ctBuf.append(" (make-class-def\n");

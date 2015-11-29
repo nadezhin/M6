@@ -5,18 +5,17 @@
 
 import com.sun.tools.classfile.AccessFlags;
 import com.sun.tools.classfile.Attribute;
-import com.sun.tools.classfile.Attributes;
 import com.sun.tools.classfile.ClassFile;
 import com.sun.tools.classfile.Code_attribute;
 import com.sun.tools.classfile.ConstantPool;
 import com.sun.tools.classfile.ConstantPoolException;
-import com.sun.tools.classfile.Descriptor;
 import com.sun.tools.classfile.DescriptorException;
 import com.sun.tools.classfile.Instruction;
 import com.sun.tools.classfile.LineNumberTable_attribute;
 import com.sun.tools.classfile.LocalVariableTable_attribute;
 import com.sun.tools.classfile.Method;
 import com.sun.tools.classfile.Opcode;
+import com.sun.tools.classfile.StackMapTable_attribute;
 import com.sun.tools.classfile.StackMap_attribute;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -48,21 +47,20 @@ import java.util.StringTokenizer;
  */
 public class M6Method {
 
+    private final M6Class cls;
     private final Method m;
     private final ClassFile cf;
 
     private final String name;
     private final String desc;
     private final List<String> params = new ArrayList<>();
-    private String returntype;
-    private final M6AccessFlags accessflags;
+    private final String returntype;
 
     private final Code_attribute cai;
     private final int max_stack; // assuming there is only one code attribute for each method.
     private final int max_locals;
     private final int code_length;
-    private M6ExceptionHandler[] handlers;
-    private M6StackMapAttrInfo stackmaps;
+    private final StackMap_attribute sm;
     private final LineNumberTable_attribute lnt;
     private final LocalVariableTable_attribute lvt;
 
@@ -74,10 +72,6 @@ public class M6Method {
     private Hashtable tagTable;
 
     private static boolean no_method_body = false;
-    private static boolean keep_debug_info = false;
-
-    private String lntStr;
-    private String lvtStr;
 
     /**
      * This constructor takes a ClassFile and the MethodInfo structure
@@ -86,42 +80,36 @@ public class M6Method {
      * @param c	The ClassFile representing the class
      * @param m	The MethodInfo structure representing the method to analyze.
      */
-    public M6Method(ClassFile c, Method m)
+    public M6Method(M6Class cls, Method m)
             throws ConstantPoolException {
-        cf = c;
+        this.cls = cls;
+        cf = cls.cf;
         this.m = m;
-        name = m.getName(c.constant_pool);
-        desc = m.descriptor.getValue(c.constant_pool);
-        accessflags = new M6AccessFlags(m.access_flags);
+        name = m.getName(cf.constant_pool);
+        desc = m.descriptor.getValue(cf.constant_pool);
+        String[] ss = splitMethodDesc(desc);
+        for (int i = 1; i < ss.length; i++) {
+            params.add(ss[i]);
+        }
+        returntype = ss[0];
         cai = (Code_attribute) m.attributes.get(Attribute.Code);
         if (cai != null) {
             max_stack = cai.max_stack;
             max_locals = cai.max_locals;
             code_length = cai.code_length;
+            sm = (StackMap_attribute) cai.attributes.get(Attribute.StackMap);
             lnt = (LineNumberTable_attribute) cai.attributes.get(Attribute.LineNumberTable);
             lvt = (LocalVariableTable_attribute) cai.attributes.get(Attribute.LocalVariableTable);
         } else {
             max_stack = max_locals = code_length = 0;
+            sm = null;
             lnt = null;
             lvt = null;
         }
 
-        handlers = null;
-        stackmaps = null;
-
         tagTable = new Hashtable();
-        debug = true;
+//        debug = true;
         processed = false;
-        lntStr = null;
-        lvtStr = null;
-    }
-
-    public String getLntStr() {
-        return lntStr;
-    }
-
-    public String getLvtStr() {
-        return lvtStr;
     }
 
     private static String replaceAllandApp(String src, String o, String n) {
@@ -192,18 +180,18 @@ public class M6Method {
         m6instructions = newinstr;
     }
 
-    public String printLineNumberTable() throws ConstantPoolException {
+    public String getLntStr() throws ConstantPoolException {
         StringBuffer buf = new StringBuffer();
         buf.append("((\"" + cf.getName() + "\" \"" + name + "\"");
         buf.append("\n  (");
         for (int i = 0; i < params.size(); i++) {
-            buf.append(params.get(i));
+            buf.append(ACL2utils.descToACL2TypeStr(params.get(i)));
             if (i < (params.size() - 1)) {
                 buf.append(" ");
             }
         }
         buf.append(")\n");
-        buf.append("      (returntype . " + returntype + "))\n");
+        buf.append("      (returntype . " + ACL2utils.descToACL2TypeStr(returntype) + "))\n");
         buf.append("(");
         if (lnt != null) {
             int len = lnt.line_number_table_length;
@@ -216,19 +204,19 @@ public class M6Method {
         return buf.toString();
     }
 
-    public String printLocalVariableTable() throws ConstantPoolException {
+    public String getLvtStr() throws ConstantPoolException {
         StringBuffer buf = new StringBuffer();
         buf.append("((\"" + cf.getName() + "\" \"" + name + "\"");
         buf.append("\n  (");
 
         for (int i = 0; i < params.size(); i++) {
-            buf.append(params.get(i));
+            buf.append(ACL2utils.descToACL2TypeStr(params.get(i)));
             if (i < (params.size() - 1)) {
                 buf.append(" ");
             }
         }
         buf.append(")\n");
-        buf.append("      (returntype . " + returntype + "))\n");
+        buf.append("      (returntype . " + ACL2utils.descToACL2TypeStr(returntype) + "))\n");
         buf.append("(");
         if (lvt != null) {
             int len = lvt.local_variable_table_length;
@@ -255,7 +243,7 @@ public class M6Method {
                 buf.append("(" + start_pc
                         + " " + (start_pc + length)
                         + " " + name
-                        + " " + ACL2utils.ClassInfoToACL2TypeStr(desc) + ")\n");
+                        + " " + ACL2utils.classNameToACL2TypeStr(desc) + ")\n");
             }
         }
         return buf;
@@ -269,145 +257,235 @@ public class M6Method {
      * @param target Target JVM model
      * @return	A pretty-printed String representing this method.
      */
-    public String toString(int lmargin, Target target) {
+    public String toString(int lmargin, Target target) throws ConstantPoolException {
         if (!processed) {
             return "You must call processMethod first!";
         }
 
-        StringBuffer buf = new StringBuffer();
-        StringBuffer padb = new StringBuffer();
-        for (int i = 0; i < lmargin; i++) {
-            padb.append(" ");
-        }
-
-        String pad = padb.toString();
+        StringBuilder sb = new StringBuilder();
         switch (target) {
             case M5:
                 if (ACL2utils.NAME_AND_TYPE) {
-                    buf
-                            .append(pad)
+                    indent(sb, lmargin);
+                    sb
                             .append("'(\"")
                             .append(name)
                             .append(":")
                             .append(desc)
                             .append("\"");
                 } else {
-                    buf.append(pad + "'(\"" + name + "\" (");
+                    indent(sb, lmargin);
+                    sb.append("'(\"" + name + "\" (");
                     for (int i = 0; i < params.size(); i++) {
-                        buf.append(params.get(i));
+                        sb.append(params.get(i));
 
                         if (i < (params.size() - 1)) {
-                            buf.append(" ");
+                            sb.append(" ");
                         }
                     }
-                    buf.append(')');
+                    sb.append(')');
                 }
-                buf.append(' ');
-                buf.append((m.access_flags.is(AccessFlags.ACC_SYNCHRONIZED) ? "t" : "nil") + "\n");
+                sb.append(' ');
+                sb.append((m.access_flags.is(AccessFlags.ACC_SYNCHRONIZED) ? "t" : "nil") + "\n");
+
+                for (int i = 0; i < m6instructions.size(); i++) {
+                    indent(sb, lmargin + 2);
+                    sb.append(m6instructions.get(i)).append('\n');
+                }
+                indent(sb, lmargin + 1);
+                sb.append(")");
                 break;
             case M6:
-                buf.append(pad + "(method \"" + name + "\"\n");
-                buf.append(pad + "      (parameters ");
+                indent(sb, lmargin);
+                sb.append("(method \"" + name + "\"");
+                nl(sb, lmargin + 6, "(parameters ");
                 for (int i = 0; i < params.size(); i++) {
-                    buf.append(params.get(i));
+                    sb.append(ACL2utils.descToACL2TypeStr(params.get(i)));
 
                     if (i < (params.size() - 1)) {
-                        buf.append(" ");
+                        sb.append(" ");
                     }
                 }
-                buf.append(")\n");
-                buf.append(pad + "      (returntype . " + returntype + ")\n");
+                sb.append(")");
+                nl(sb, lmargin + 6, "(returntype . " + ACL2utils.descToACL2TypeStr(returntype) + ")");
+                nl(sb, lmargin + 6, ACL2utils.accessFlagsToString(m.access_flags));
 
-                buf.append(accessflags.toString(lmargin + 6) + "\n");
-                buf.append(pad + "      (code");
+                nl(sb, lmargin + 6, "(code");
                 if (cai != null && !no_method_body) {
-                    buf.append("\n" + pad + "           (max_stack . " + max_stack + ")"
+                    nl(sb, lmargin + 11, "(max_stack . " + max_stack + ")"
                             + " (max_locals . " + max_locals + ")"
-                            + " (code_length . " + code_length + ")\n");
-                    buf.append(pad + "           (parsedcode\n");
+                            + " (code_length . " + code_length + ")");
+                    nl(sb, lmargin + 11, "(parsedcode");
+
+                    for (int i = 0; i < m6instructions.size(); i++) {
+                        nl(sb, lmargin + 14, m6instructions.get(i));
+                    }
+                    sb.append(")");
+
+                    nl(sb, lmargin + 11, "(Exceptions ");
+                    for (int i = 0; i < cai.exception_table.length; i++) {
+                        Code_attribute.Exception_data ed = cai.exception_table[i];
+                        String catchType = ed.catch_type != 0
+                                ? cf.constant_pool.getClassInfo(ed.catch_type).getName().replace('/', '.')
+                                : "java/lang.Throwable";
+                        String acl2Type = ACL2utils.classNameToACL2TypeStr(catchType);
+                        nl(sb, lmargin + 13,
+                                "(handler " + ed.start_pc + " " + ed.end_pc + "  " + ed.handler_pc + " " + acl2Type + ")");
+                    }
+                    sb.append(')');
+
+                    nl(sb, lmargin + (sm != null ? 12 : 11), "(StackMap ");
+                    if (sm != null) {
+                        for (int i = 0; i < sm.entries.length; i++) {
+                            sb.append('\n');
+                            StackMap_attribute.stack_map_frame smf
+                                    = (StackMap_attribute.stack_map_frame) sm.entries[i];
+                            appendStackMapFrame(sb, lmargin + 17, smf, cf.constant_pool, max_locals);
+                        }
+                    }
+                    sb.append(")");
                 }
+                sb.append("))");
                 break;
         }
+        return sb.toString();
+    }
 
-        for (int i = 0; i < m6instructions.size(); i++) {
-            StringBuffer line = new StringBuffer(pad);
-            switch (target) {
-                case M5:
-                    line.append("  ");
+    private static void indent(StringBuilder sb, int indent) {
+        while (indent-- > 0) {
+            sb.append(' ');
+        }
+    }
+
+    private static void nl(StringBuilder sb, int indent) {
+        sb.append('\n');
+        indent(sb, indent);
+    }
+
+    private static void nl(StringBuilder sb, int indent, String s) {
+        nl(sb, indent);
+        sb.append(s);
+    }
+
+    private static void appendStackMapFrame(StringBuilder sb, int lmargin,
+            StackMap_attribute.stack_map_frame smf,
+            ConstantPool cp,
+            int FrameSize) throws ConstantPoolException {
+        indent(sb, lmargin);
+        sb.append('(').append(smf.offset_delta).append(" (frame");
+        nl(sb, lmargin + 4);
+        sb.append("(locals ");
+
+        String rtflags = "nil";
+        int k = 0;
+        for (int i = 0; i < smf.number_of_locals; i++) {
+            StackMapTable_attribute.verification_type_info typeInfo
+                    = (StackMapTable_attribute.verification_type_info) smf.locals[i];
+            if (k > 0) {
+                nl(sb, lmargin + 9);
+            }
+            appendStackMapType(sb, typeInfo, cp);
+            k++;
+            switch (typeInfo.tag) {
+                case StackMapTable_attribute.verification_type_info.ITEM_Long:
+                case StackMapTable_attribute.verification_type_info.ITEM_Double:
+                    nl(sb, lmargin + 9);
+                    sb.append("topx");
+                    k++;
                     break;
-                case M6:
-                    line.append("              ");
+                case StackMapTable_attribute.verification_type_info.ITEM_UninitializedThis:
+                    rtflags = "(flagThisUninit)";
                     break;
             }
-            line.append(m6instructions.get(i));
-
-            // round the line length to multiple of 20.
-            /*
-             if (i < m6instructions.size() - 1) {
-             int bc = 20 - (line.length()) % 20;
-             for (int j = 0; j < bc; j++) {
-             line.append(" ");
-             }
-             };
-
-             if (i == (m6instructions.size() - 1)) {
-             line.append(")");
-             int bc = 20 - (line.length()) % 20;
-             for (int j = 0; j < bc; j++) {
-             line.append(" ");
-             }
-             line.append(";; " + i);
-             } else {
-             line.append(";; " + i);
-             line.append("\n");
-             }
-             */
-            buf.append(line);
-            switch (target) {
-                case M5:
-                    buf.append("\n");
-                    break;
-                case M6:
-                    if (i < m6instructions.size() - 1) {
-                        buf.append("\n");
+        }
+        while (k < FrameSize) {
+            if (k > 0) {
+                nl(sb, lmargin + 9);
+            }
+            sb.append("topx");
+            k++;
+        }
+        sb.append(')');
+        nl(sb, lmargin + 4);
+        sb.append("(stack ");
+        k = 0;
+        for (int i = smf.number_of_stack_items - 1; i >= 0; i--) {
+            StackMapTable_attribute.verification_type_info typeInfo
+                    = (StackMapTable_attribute.verification_type_info) smf.stack[i];
+            switch (typeInfo.tag) {
+                case StackMapTable_attribute.verification_type_info.ITEM_Long:
+                case StackMapTable_attribute.verification_type_info.ITEM_Double:
+                    if (k > 0) {
+                        nl(sb, lmargin + 9);
                     }
+                    sb.append("topx");
+                    k++;
                     break;
             }
+            if (k > 0) {
+                nl(sb, lmargin + 9);
+            }
+            appendStackMapType(sb, typeInfo, cp);
+            k++;
         }
-        switch (target) {
-            case M5:
-                buf.append(pad + " )");
-                break;
-            case M6:
-                buf.append(")");
-                if (cai != null && !no_method_body) {
-                    buf.append("\n" + pad + "           (Exceptions ");
-                    if (handlers != null) {
-                        for (int i = 0; i < handlers.length; i++) {
-                            buf.append("\n" + pad + "             " + handlers[i].toString());
-                        };
-                    };
-                    buf.append(")\n");
+        sb.append(')');
+        nl(sb, lmargin + 4);
+        sb.append(rtflags).append("))");
+    }
 
-                    if (stackmaps != null) {
-                        buf.append(stackmaps.toString(lmargin + 12));
-                    } else {
-                        buf.append(pad + "           (StackMap )");
-                    }
-                    buf.append(")");
-                }
-                buf.append(")");
-                break;
+    private static String[] type_names
+            = {"topx", "int", "float", "double",
+                "long", "null", "uninitializedThis", "cpindex",
+                "uninitilizedoffset", "returnaddress"};
+
+    private static void appendStackMapType(StringBuilder sb,
+            StackMapTable_attribute.verification_type_info typeInfo, ConstantPool cp)
+            throws ConstantPoolException {
+        if (typeInfo == null) {
+            sb.append(type_names[0]);
+            return;
         }
-        return buf.toString();
+        int type = typeInfo.tag;
+        switch (type) {
+            case 0:
+            case 1:
+            case 2:
+            case 3:
+            case 4:
+            case 5:
+            case 6:
+                sb.append(type_names[type]);
+                break;
+            case 7: {
+                StackMapTable_attribute.Object_variable_info typeInfoObject
+                        = (StackMapTable_attribute.Object_variable_info) typeInfo;
+                int index = typeInfoObject.cpool_index;
+                ConstantPool.CONSTANT_Class_info info = cp.getClassInfo(index);
+                sb.append(ACL2utils.classNameToACL2TypeStr(info.getName()));
+            }
+            break;
+            case 8: {
+                StackMapTable_attribute.Uninitialized_variable_info typeInfoUninitialized
+                        = (StackMapTable_attribute.Uninitialized_variable_info) typeInfo;
+                int offset = typeInfoUninitialized.offset;
+                sb.append("(uninitialized " + offset + ")");
+            }
+            break;
+            case 9: {
+                assert false;
+//                int offset;
+//                offset = file.readUnsignedShort();
+//                type_name = "(returnAddress " + offset + ")";
+            }
+            break;
+            default:
+                throw new RuntimeException("Illeagal Type in StackMap" + type);
+
+        }
     }
 
     public static void setAbstractMode() {
         no_method_body = true;
-    }
-
-    public static void setKeepLntLvt() {
-        keep_debug_info = true;
     }
 
     static class LabelsVisitor implements Instruction.KindVisitor<List<Integer>, Void> {
@@ -486,36 +564,11 @@ public class M6Method {
      * representing the outer class from which this method is taken from.
      * @param target Target JVM model
      */
-    public void processMethod(List constant_pool, Target target) throws ConstantPoolException, DescriptorException {
+    public void processMethod(Target target) throws ConstantPoolException, DescriptorException {
         /* The name of the method */
         if (debug) {
-            System.out.println("\nProcessing method: " + name);
+            System.out.println("\nProcessing method: " + name + "Parameters: " + params);
         }
-
-        /* We parse in the parameters into a Vector insert "top" if necessary. if necessary. */
-        int paramCount = m.descriptor.getParameterCount(cf.constant_pool);
-        String paramTypes = m.descriptor.getParameterTypes(cf.constant_pool);
-        if (paramCount > 0) {
-            assert paramTypes.charAt(0) == '(' && paramTypes.charAt(paramTypes.length() - 1) == ')';
-            String[] paramStrs = paramTypes.substring(1, paramTypes.length() - 1).split(",");
-            assert paramStrs.length == paramCount;
-            for (int i = 0; i < paramCount; i++) {
-                params.add(ACL2utils.JavaTypeStrToACL2TypeStr(paramStrs[i].trim()));
-            }
-        } else {
-            assert paramTypes.equals("()");
-        }
-//        String[] ps = m0.getParams();
-//        for (int i = 0; i < ps.length; i++) {
-//            String curtype = ps[i];
-//            params.add(ACL2utils.JavaTypeStrToACL2TypeStr(curtype));
-//        }
-        if (debug) {
-            System.out.println("Parameters: " + params);
-        }
-        /* store the return type */
-        returntype = ACL2utils.JavaTypeStrToACL2TypeStr(m.descriptor.getReturnType(cf.constant_pool)); // hanbing
-
         /* Process the code attribute */
         if (cai == null || no_method_body) {
             switch (target) {
@@ -558,7 +611,7 @@ public class M6Method {
                     m6instructions.add("; " + "line_number #" + lnt.line_number_table[li].line_number);
                     li++;
                 }
-                String resultStr = parseInst(instr, constant_pool, offset, labels, target);
+                String resultStr = parseInst(instr, offset, labels, target);
                 if (resultStr != null) {
                     m6instructions.add(resultStr);
                     offset = offset + instr.length();
@@ -582,49 +635,16 @@ public class M6Method {
                     m6instructions.add("(endofcode " + code_length + ")");
                     break;
             }
-
-            // get handlers correctly.
-            int ecount = cai.exception_table_length;
-
-            if (ecount > 0) {
-                handlers = new M6ExceptionHandler[ecount];
-                for (int i = 0; i < ecount; i++) {
-                    M6ExceptionHandler h = new M6ExceptionHandler(cai.exception_table[i], cf.constant_pool);
-                    handlers[i] = h;
-                }
-            }
-
-            // get StackMap Attributes
-            Attributes aal = cai.attributes;
-            StackMap_attribute sm = (StackMap_attribute) aal.get(Attribute.StackMap);
-
-            if (sm != null) {
-                M6StackMapAttrInfo attr = new M6StackMapAttrInfo(sm, cf.constant_pool, max_locals);
-                stackmaps = attr;
-            } else {
-                stackmaps = null;
-            }
-
-            // get LineNumberAttrInfo 
         }
         processed = true;
-
-        if (M6Method.keep_debug_info) {
-            lntStr = printLineNumberTable();
-            lvtStr = printLocalVariableTable();
-        }
     }
 
     abstract class ParseVisitor implements Instruction.KindVisitor<String, Void> {
 
-        private final Target target;
-        private final List constant_pool;
         final Map<Integer, Integer> labels;
-        private final StringBuilder tmp2;
+        final StringBuilder tmp2;
 
-        ParseVisitor(Target target, List constant_pool, Map<Integer, Integer> labels, StringBuilder tmp2) {
-            this.target = target;
-            this.constant_pool = constant_pool;
+        ParseVisitor(Map<Integer, Integer> labels, StringBuilder tmp2) {
             this.labels = labels;
             this.tmp2 = tmp2;
         }
@@ -633,13 +653,7 @@ public class M6Method {
 
         abstract String typeKind(Instruction.TypeKind tk);
 
-        abstract String makeClassCP(ConstantPool.CONSTANT_Class_info infoClass) throws ConstantPoolException;
-
-        abstract String makeFieldCP(ConstantPool.CONSTANT_Fieldref_info infoFieldref) throws ConstantPoolException;
-
-        abstract String makeMethodCP(ConstantPool.CONSTANT_Class_info infoClass,
-                ConstantPool.CONSTANT_NameAndType_info infoNameAndType)
-                throws ConstantPoolException, DescriptorException;
+        abstract void cpRef(StringBuilder sb, Opcode op, M6Class.CPEntry cpe);
 
         @Override
         public String visitNoOperands(Instruction instr, Void p) {
@@ -669,171 +683,17 @@ public class M6Method {
         @Override
         public String visitConstantPoolRef(Instruction instr, int index, Void p) {
             StringBuilder sb = new StringBuilder();
-            sb.append(instr.getMnemonic()).append(' ');
-            try {
-                ConstantPool.CONSTANT_Class_info infoClass;
-                ConstantPool.CONSTANT_NameAndType_info infoNameAndType;
-                ConstantPool.CPInfo info = cf.constant_pool.get(index);
-                switch (info.getTag()) {
-                    case ConstantPool.CONSTANT_Integer:
-                        Integer valInteger = new Integer(((ConstantPool.CONSTANT_Integer_info) info).value);
-                        if (constant_pool.contains(valInteger)) {
-                            sb.append(constant_pool.indexOf(valInteger));
-                        } else {
-                            constant_pool.add(valInteger);
-                            sb.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(";;INT:: \"" + valInteger + "\"");
-                        break;
-                    case ConstantPool.CONSTANT_Float:
-                        Float valFloat = new Float(((ConstantPool.CONSTANT_Float_info) info).value);
-                        if (constant_pool.contains(valFloat)) {
-                            sb.append(constant_pool.indexOf(valFloat));
-                        } else {
-                            constant_pool.add(valFloat);
-                            sb.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(";;FLOAT:: \"" + valFloat + "\"");
-                        break;
-                    case ConstantPool.CONSTANT_Long:
-                        Long valLong = new Long(((ConstantPool.CONSTANT_Long_info) info).value);
-                        if (constant_pool.contains(valLong)) {
-                            sb.append(constant_pool.indexOf(valLong));
-                        } else {
-                            constant_pool.add(valLong);
-                            sb.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(instr.getOpcode() == Opcode.LDC2_W ? ";; LONG:: \"" : ";;Long:: \"")
-                                .append(valLong)
-                                .append("\"");
-                        break;
-                    case ConstantPool.CONSTANT_Double:
-                        Double valDouble = new Double(((ConstantPool.CONSTANT_Double_info) info).value);
-                        if (constant_pool.contains(valDouble)) {
-                            sb.append(constant_pool.indexOf(valDouble));
-                        } else {
-                            constant_pool.add(valDouble);
-                            sb.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(instr.getOpcode() == Opcode.LDC2_W ? ";; DOUBLE:: \"" : ";;Doulbe:: \"")
-                                .append(valDouble)
-                                .append("\"");
-                        break;
-                    case ConstantPool.CONSTANT_Class:
-                        infoClass = (ConstantPool.CONSTANT_Class_info) info;
-                        switch (instr.getOpcode()) {
-                            case LDC:
-                            case LDC_W:
-                            case LDC2_W:
-                                M6Class.ClassRef valClass = new M6Class.ClassRef(infoClass.getName());
-                                if (constant_pool.contains(valClass)) {
-                                    sb.append(constant_pool.indexOf(valClass));
-                                } else {
-                                    constant_pool.add(valClass);
-                                    sb.append(constant_pool.size() - 1);  // zero-based indices
-                                }
-                                switch (target) {
-                                    case M5:
-                                        tmp2.append(";;CLASS:: \"" + valClass + "\"");
-                                        break;
-                                    case M6:
-                                        tmp2.append(";;CLASS:: \"" + valClass.className.replace('/', '.') + "\"");
-                                        break;
-                                }
-                                break;
-                            default:
-                                sb.append(makeClassCP(infoClass));
-                        }
-                        break;
-                    case ConstantPool.CONSTANT_String:
-                        M6Class.StringRef valString = new M6Class.StringRef(((ConstantPool.CONSTANT_String_info) info).getString());
-                        if (constant_pool.contains(valString)) {
-                            sb.append(constant_pool.indexOf(valString));
-                        } else {
-                            constant_pool.add(valString);
-                            sb.append(constant_pool.size() - 1);  // zero-based indices
-                        }
-                        tmp2.append(";;STRING:: \"" + valString.toString(target == Target.M6) + "\"");
-                        break;
-                    case ConstantPool.CONSTANT_Fieldref:
-                        ConstantPool.CONSTANT_Fieldref_info infoFieldref
-                                = (ConstantPool.CONSTANT_Fieldref_info) info;
-                        sb.append(makeFieldCP(infoFieldref));
-                        break;
-                    case ConstantPool.CONSTANT_Methodref:
-                    case ConstantPool.CONSTANT_InterfaceMethodref:
-                        if (info.getTag() == ConstantPool.CONSTANT_InterfaceMethodref) {
-                            ConstantPool.CONSTANT_InterfaceMethodref_info infoInterfaceMethodref
-                                    = (ConstantPool.CONSTANT_InterfaceMethodref_info) info;
-                            infoClass = cf.constant_pool.getClassInfo(infoInterfaceMethodref.class_index);
-                            infoNameAndType = cf.constant_pool.getNameAndTypeInfo(infoInterfaceMethodref.name_and_type_index);
-
-                        } else {
-                            ConstantPool.CONSTANT_Methodref_info infoMethodref
-                                    = (ConstantPool.CONSTANT_Methodref_info) info;
-                            infoClass = cf.constant_pool.getClassInfo(infoMethodref.class_index);
-                            infoNameAndType = cf.constant_pool.getNameAndTypeInfo(infoMethodref.name_and_type_index);
-                        }
-                        switch (target) {
-                            case M5:
-                                sb.append(makeMethodCP(infoClass, infoNameAndType));
-                                break;
-                            case M6:
-                                sb.setLength(sb.length() - 1);
-                                sb.append("\n\t\t\t\t\t")
-                                        .append(makeMethodCP(infoClass, infoNameAndType));
-                                break;
-                        }
-                        break;
-                    default:
-                        throw new AssertionError();
-                }
-            } catch (ConstantPoolException | DescriptorException e) {
-                sb.append(e.getMessage());
-            }
+            sb.append(instr.getMnemonic());
+            cpRef(sb, instr.getOpcode(), cls.constantPool[index]);
             return sb.toString();
         }
 
         @Override
         public String visitConstantPoolRefAndValue(Instruction instr, int index, int value, Void p) {
             StringBuilder sb = new StringBuilder();
-            sb.append(instr.getMnemonic())
-                    .append(' ');
-            try {
-                ConstantPool.CONSTANT_Class_info infoClass;
-                ConstantPool.CPInfo info = cf.constant_pool.get(index);
-                switch (info.getTag()) {
-                    case ConstantPool.CONSTANT_Class:
-                        infoClass = cf.constant_pool.getClassInfo(index);
-                        sb.append(makeClassCP((ConstantPool.CONSTANT_Class_info) info))
-                                .append(' ')
-                                .append(value);
-                        break;
-                    case ConstantPool.CONSTANT_InterfaceMethodref:
-                        ConstantPool.CONSTANT_InterfaceMethodref_info infoInterfaceMethodref
-                                = (ConstantPool.CONSTANT_InterfaceMethodref_info) info;
-                        infoClass = cf.constant_pool.getClassInfo(infoInterfaceMethodref.class_index);
-                        ConstantPool.CONSTANT_NameAndType_info infoNameAndType
-                                = cf.constant_pool.getNameAndTypeInfo(infoInterfaceMethodref.name_and_type_index);
-                        switch (target) {
-                            case M5:
-                                sb.append(makeMethodCP(infoClass, infoNameAndType))
-                                        .append(' ')
-                                        .append(value);
-                                break;
-                            case M6:
-                                sb.setLength(sb.length() - 1);
-                                sb.append("\n\t\t\t\t\t")
-                                        .append(makeMethodCP(infoClass, infoNameAndType))
-                                        .append(' ')
-                                        .append(value);
-                                break;
-                        }
-                        break;
-                }
-            } catch (ConstantPoolException | DescriptorException e) {
-                sb.append(e.getMessage());
-            }
+            sb.append(instr.getMnemonic());
+            cpRef(sb, instr.getOpcode(), cls.constantPool[index]);
+            sb.append(' ').append(value);
             return sb.toString();
         }
 
@@ -915,8 +775,8 @@ public class M6Method {
 
     class ParseVisitorM5 extends ParseVisitor {
 
-        ParseVisitorM5(List constant_pool, Map<Integer, Integer> labels, StringBuilder tmp2) {
-            super(Target.M5, constant_pool, labels, tmp2);
+        ParseVisitorM5(Map<Integer, Integer> labels, StringBuilder tmp2) {
+            super(labels, tmp2);
         }
 
         @Override
@@ -930,94 +790,15 @@ public class M6Method {
         }
 
         @Override
-        String makeClassCP(ConstantPool.CONSTANT_Class_info infoClass)
-                throws ConstantPoolException {
-            return "\"" + infoClass.getName().replace('/', '.') + "\"";
-        }
-
-        @Override
-        String makeFieldCP(ConstantPool.CONSTANT_Fieldref_info infoFieldref)
-                throws ConstantPoolException {
-            StringBuilder sb = new StringBuilder();
-            ConstantPool.CONSTANT_Class_info infoClass
-                    = cf.constant_pool.getClassInfo(infoFieldref.class_index);
-            ConstantPool.CONSTANT_NameAndType_info infoNameAndType
-                    = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index);
-            if (ACL2utils.NAME_AND_TYPE) {
-                sb.append("\"")
-                        .append(infoClass.getName())
-                        .append("\" \"")
-                        .append(infoNameAndType.getName())
-                        .append(':')
-                        .append(infoNameAndType.getType())
-                        .append("\"");
-            } else {
-                sb.append("\"")
-                        .append(infoClass.getName().replace('/', '.'))
-                        .append("\" \"")
-                        .append(infoNameAndType.getName())
-                        .append("\"");
-                switch (infoNameAndType.getType()) {
-                    case "J":
-                    case "D":
-                        sb.append(" t");
-                        break;
-                }
-            }
-            return sb.toString();
-        }
-
-        @Override
-        String makeMethodCP(ConstantPool.CONSTANT_Class_info infoClass,
-                ConstantPool.CONSTANT_NameAndType_info infoNameAndType)
-                throws ConstantPoolException, DescriptorException {
-            StringBuilder sb = new StringBuilder();
-
-            if (ACL2utils.NAME_AND_TYPE) {
-                sb.append("\"")
-                        .append(infoClass.getName())
-                        .append("\" \"")
-                        .append(infoNameAndType.getName())
-                        .append(':')
-                        .append(infoNameAndType.getType());
-            } else {
-                sb.append("\"")
-                        .append(infoClass.getName().replace('/', '.'))
-                        .append("\" \"")
-                        .append(infoNameAndType.getName());
-
-            }
-            String type = cf.constant_pool.getUTF8Value(infoNameAndType.type_index);
-            int ind = type.indexOf(')');
-            assert type.startsWith("(") && ind > 0;
-            String params = type.substring(1, ind);
-            int paramCount = 0;
-            while (!params.isEmpty()) {
-                int i = 0;
-                while (params.charAt(i) == '[') {
-                    i++;
-                }
-                paramCount++;
-                if (params.charAt(i) == 'L') {
-                    i = params.indexOf(';') + 1;
-                } else {
-                    if (i == 0 && (params.charAt(i) == 'D' || params.charAt(i) == 'J')) {
-                        paramCount++;
-                    }
-                    i++;
-                }
-                params = params.substring(i);
-            }
-            return sb.append("\" ")
-                    .append(paramCount)
-                    .toString();
+        void cpRef(StringBuilder sb, Opcode op, M6Class.CPEntry cpe) {
+            cpe.appendCPRefM5(sb, tmp2, op);
         }
     }
 
     class ParseVisitorM6 extends ParseVisitor {
 
-        ParseVisitorM6(List constant_pool, Map<Integer, Integer> labels, StringBuilder tmp2) {
-            super(Target.M6, constant_pool, labels, tmp2);
+        ParseVisitorM6(Map<Integer, Integer> labels, StringBuilder tmp2) {
+            super(labels, tmp2);
         }
 
         @Override
@@ -1031,167 +812,13 @@ public class M6Method {
         }
 
         @Override
-        String makeClassCP(ConstantPool.CONSTANT_Class_info infoClass)
-                throws ConstantPoolException {
-            String className = infoClass.getName();
-            if (className.startsWith("[")) {
-                return "(array " + makeTypeCP(className.substring(1)) + ")";
-            } else {
-                return "(class \"" + className.replace('/', '.') + "\")";
-            }
-        }
-
-        private String makeTypeCP(String type)
-                throws ConstantPoolException {
-            type = type.replace('/', '.');
-            int c = 0;
-            if (type.startsWith("[")) {
-                c = type.lastIndexOf("[") + 1;
-                assert c > 0;
-                type = type.substring(c);
-            }
-            switch (type) {
-                case "V":
-                    type = "void";
-                    break;
-                case "Z":
-                    type = "boolean";
-                    break;
-                case "B":
-                    type = "byte";
-                    break;
-                case "C":
-                    type = "char";
-                    break;
-                case "S":
-                    type = "short";
-                    break;
-                case "I":
-                    type = "int";
-                    break;
-                case "J":
-                    type = "long";
-                    break;
-                case "F":
-                    type = "float";
-                    break;
-                case "D":
-                    type = "double";
-                    break;
-                default:
-                    assert type.startsWith("L") && type.endsWith(";");
-                    type = type.substring(1, type.length() - 1);
-                    type = "(class \"" + type + "\")";
-            }
-            while (c > 0) {
-                type = "(array " + type + ")";
-                c--;
-            }
-            return type;
-        }
-
-        private String classInfo2(ConstantPool.CONSTANT_Class_info infoClass)
-                throws ConstantPoolException {
-            String name = infoClass.getName().replace('/', '.');
-            if (name.startsWith("[")) {
-                int c = name.lastIndexOf("[") + 1;
-                assert c > 0;
-                name = name.substring(c);
-                switch (name) {
-                    case "Z":
-                        name = "boolean";
-                        break;
-                    case "B":
-                        name = "byte";
-                        break;
-                    case "C":
-                        name = "char";
-                        break;
-                    case "S":
-                        name = "short";
-                        break;
-                    case "I":
-                        name = "int";
-                        break;
-                    case "J":
-                        name = "long";
-                        break;
-                    case "F":
-                        name = "float";
-                        break;
-                    case "D":
-                        name = "double";
-                        break;
-                    default:
-                        assert name.startsWith("L") && name.endsWith(";");
-                        name = name.substring(1, name.length() - 1);
-                }
-                while (c > 0) {
-                    name += "[]";
-                    c--;
-                }
-            }
-            return "\"" + name + "\"";
-        }
-
-        @Override
-        String makeFieldCP(ConstantPool.CONSTANT_Fieldref_info infoFieldref)
-                throws ConstantPoolException {
-            StringBuilder sb = new StringBuilder();
-            ConstantPool.CONSTANT_Class_info infoClass
-                    = cf.constant_pool.getClassInfo(infoFieldref.class_index);
-            ConstantPool.CONSTANT_NameAndType_info infoNameAndType
-                    = cf.constant_pool.getNameAndTypeInfo(infoFieldref.name_and_type_index);
-            return sb.append("(fieldCP \"")
-                    .append(infoNameAndType.getName())
-                    .append("\" \"")
-                    .append(infoClass.getName().replace('/', '.'))
-                    .append("\" ")
-                    .append(makeTypeCP(cf.constant_pool.getUTF8Value(infoNameAndType.type_index)))
-                    .append(')')
-                    .toString();
-        }
-
-        @Override
-        String makeMethodCP(ConstantPool.CONSTANT_Class_info infoClass,
-                ConstantPool.CONSTANT_NameAndType_info infoNameAndType)
-                throws ConstantPoolException {
-            StringBuilder sb = new StringBuilder();
-            sb.append("(methodCP \"")
-                    .append(infoNameAndType.getName())
-                    .append("\" ")
-                    .append(classInfo2(infoClass))
-                    .append(" (");
-            String type = cf.constant_pool.getUTF8Value(infoNameAndType.type_index);
-            int ind = type.indexOf(')');
-            assert type.startsWith("(") && ind > 0;
-            String params = type.substring(1, ind);
-            while (!params.isEmpty()) {
-                int i = 0;
-                while (params.charAt(i) == '[') {
-                    i++;
-                }
-                if (params.charAt(i) == 'L') {
-                    i = params.indexOf(';') + 1;
-                } else {
-                    i++;
-                }
-                sb.append(makeTypeCP(params.substring(0, i)));
-                params = params.substring(i);
-                if (!params.isEmpty()) {
-                    sb.append(' ');
-                }
-            }
-            return sb.append(") ")
-                    .append(makeTypeCP(type.substring(ind + 1)))
-                    .append(')')
-                    .toString();
+        void cpRef(StringBuilder sb, Opcode op, M6Class.CPEntry cpe) {
+            cpe.appendCPRefM6(sb, tmp2, op);
         }
     }
 
     private String parseInst(
             Instruction inst,
-            List constant_pool,
             int offset,
             Map<Integer, Integer> labels,
             Target targetModel) throws ConstantPoolException {
@@ -1201,10 +828,10 @@ public class M6Method {
         ParseVisitor parseVisitor;
         switch (targetModel) {
             case M5:
-                parseVisitor = new ParseVisitorM5(constant_pool, labels, tmp2);
+                parseVisitor = new ParseVisitorM5(labels, tmp2);
                 break;
             case M6:
-                parseVisitor = new ParseVisitorM6(constant_pool, labels, tmp2);
+                parseVisitor = new ParseVisitorM6(labels, tmp2);
                 break;
             default:
                 throw new AssertionError();
@@ -1265,5 +892,27 @@ public class M6Method {
             tmp.append(tmp2);
         }
         return tmp.toString().trim();
+    }
+
+    static String[] splitMethodDesc(String desc) {
+        List<String> ls = new ArrayList<>();
+        int ind = desc.indexOf(')');
+        assert desc.charAt(0) == '(' && ind > 0;
+        ls.add(desc.substring(ind + 1));
+        desc = desc.substring(1, ind);
+        while (!desc.isEmpty()) {
+            int i = 0;
+            while (desc.charAt(i) == '[') {
+                i++;
+            }
+            if (desc.charAt(i) == 'L') {
+                i = desc.indexOf(';') + 1;
+            } else {
+                i++;
+            }
+            ls.add(desc.substring(0, i));
+            desc = desc.substring(i);
+        }
+        return ls.toArray(new String[ls.size()]);
     }
 }
