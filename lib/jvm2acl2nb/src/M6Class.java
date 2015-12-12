@@ -39,17 +39,31 @@ import java.util.List;
  * @author J Strother Moore
  * @version 1.0
  */
-public class M6Class {
+public class M6Class implements Comparable<M6Class> {
 
     final ClassFile cf;
     private final String name;
     private final String superclassName;
     final CPEntry[] constantPool;
     private final List<CPEntry> constant_pool = new ArrayList<>();
-    private final String[] interfaceNames;
+    final String[] interfaceNames;
+    M6Class[] allSuperclasses;
     private final M6Field[] fields;
     private final M6Method[] methods;
     private boolean debug;
+    int level;
+
+    @Override
+    public int compareTo(M6Class o) {
+        if (this == o) return 0;
+        if (this.getJvmName().equals("java/lang/Object")) return -1;
+        if (o.getJvmName().equals("java/lang/Object")) return 1;
+        if (this.isInterface() && o.isClass()) return -1;
+        if (this.isClass() && o.isInterface()) return 1;
+        if (this.level < o.level) return -1;
+        if (this.level > o.level) return 1;
+        return this.getJvmName().compareTo(o.getJvmName());
+    }
 
     abstract class CPEntry {
 
