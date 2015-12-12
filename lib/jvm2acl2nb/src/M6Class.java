@@ -55,13 +55,27 @@ public class M6Class implements Comparable<M6Class> {
 
     @Override
     public int compareTo(M6Class o) {
-        if (this == o) return 0;
-        if (this.getJvmName().equals("java/lang/Object")) return -1;
-        if (o.getJvmName().equals("java/lang/Object")) return 1;
-        if (this.isInterface() && o.isClass()) return -1;
-        if (this.isClass() && o.isInterface()) return 1;
-        if (this.level < o.level) return -1;
-        if (this.level > o.level) return 1;
+        if (this == o) {
+            return 0;
+        }
+        if (this.getJvmName().equals("java/lang/Object")) {
+            return -1;
+        }
+        if (o.getJvmName().equals("java/lang/Object")) {
+            return 1;
+        }
+        if (this.isInterface() && o.isClass()) {
+            return -1;
+        }
+        if (this.isClass() && o.isInterface()) {
+            return 1;
+        }
+        if (this.level < o.level) {
+            return -1;
+        }
+        if (this.level > o.level) {
+            return 1;
+        }
         return this.getJvmName().compareTo(o.getJvmName());
     }
 
@@ -749,7 +763,7 @@ public class M6Class implements Comparable<M6Class> {
      * This method processes the ClassFile given in the constructor. It is
      * necessary to call this method before querying this class.
      */
-    public void processClassFile(Target target) throws IOException, ConstantPoolException, DescriptorException {
+    public void processClassFile() throws IOException, ConstantPoolException, DescriptorException {
         /* First, the name of the class itself */
 
         if (debug) {
@@ -760,7 +774,7 @@ public class M6Class implements Comparable<M6Class> {
             field.processField(constant_pool);
         }
         for (M6Method meth : methods) {
-            meth.processMethod(target);
+            meth.processMethod();
         }
     }
 
@@ -780,7 +794,7 @@ public class M6Class implements Comparable<M6Class> {
      * @return	A String containing the <code>(make-class-decl ...)</code> that
      * specifies this class in M5.
      */
-    public String toString(int lmargin, Target target) throws ConstantPoolException {
+    public String toString(int lmargin) throws ConstantPoolException {
         StringBuilder buf = new StringBuilder();
         StringBuilder padb = new StringBuilder();
         for (int i = 0; i < lmargin; i++) {
@@ -788,91 +802,44 @@ public class M6Class implements Comparable<M6Class> {
         }
 
         String pad = padb.toString();
-        switch (target) {
-            case M5:
-                buf.append(pad + "(make-class-decl\n");
-                if (ACL2utils.NAME_AND_TYPE) {
-                    buf.append(pad + " \"" + getJvmName() + "\"\n");
-                    if (getJvmSuperclassName() != null) {
-                        buf.append(pad + " '(\"" + getJvmSuperclassName() + "\")\n");
-                    } else {
-                        buf.append(pad + " ()\n");
-                    }
-                } else {
-                    buf.append(pad + " \"" + getJavaName() + "\"\n");
-                    buf.append(pad + " '(\"" + getJavaSuperclassName() + "\")\n");
-                }
+        indent(buf, lmargin);
+        buf.append("'(class ").append("\"" + getJavaName() + "\"");
+        nl(buf, lmargin + 8, "\"" + getJavaSuperclassName() + "\"");
 
-                buf.append(pad + " '(");
-                for (M6Field f : fields) {
-                    if (!f.isStatic()) {
-                        nl(buf, lmargin + 2, "\"" + f.getName() + ":" + f.getDesc() + "\"");
-                    }
-                }
-                buf.append(")\n");
-
-                buf.append(pad + " '(");
-                for (M6Field f : fields) {
-                    if (f.isStatic()) {
-                        nl(buf, lmargin + 2, "\"" + f.getName() + ":" + f.getDesc() + "\"");
-                    }
-                }
-                buf.append(")\n");
-
-                buf.append(pad + " '(");
-                for (CPEntry cpe : constant_pool) {
-                    cpe.appendM5(buf, lmargin + 2);
-                }
-                buf.append("\n" + pad + " )\n");
-
-                buf.append(pad + " (list");
-                for (M6Method m : methods) {
-                    buf.append("\n" + m.toString(lmargin + 2, target));
-                }
-                buf.append(")\n");
-                buf.append(pad + " '(REF -1))");
-                break;
-            case M6:
-                indent(buf, lmargin);
-                buf.append("'(class ").append("\"" + getJavaName() + "\"");
-                nl(buf, lmargin + 8, "\"" + getJavaSuperclassName() + "\"");
-
-                nl(buf, lmargin + 8, "(constant_pool");
-                for (CPEntry cpe : constant_pool) {
-                    cpe.appendM6(buf, lmargin + 20);
-                }
-                buf.append(")");
-
-                nl(buf, lmargin + 8, "(fields");
-                for (M6Field f : fields) {
-                    nl(buf, lmargin + 20, "(field \"" + f.getName() + "\" "
-                            + ACL2utils.descToACL2TypeStr(f.getDesc()) + " "
-                            + ACL2utils.accessFlagsToString(f.getAccessFlags()) + " " + f.index + ")");
-                }
-                buf.append(")");
-
-                nl(buf, lmargin + 8, "(methods");
-                for (M6Method m : methods) {
-                    buf.append("\n" + m.toString(lmargin + 20, target));
-                }
-                buf.append(")\n");
-
-                buf.append(pad + "        " + "(interfaces");
-                for (String interfaceName : interfaceNames) {
-                    buf.append(" \"" + interfaceName.replace('/', '.') + "\"");
-                }
-                buf.append(")\n");
-                buf.append(pad + "        " + ACL2utils.accessFlagsToString(cf.access_flags) + "\n");
-
-                buf.append(pad + "        " + "(attributes");
-
-                for (int i = 0; i < cf.attributes.size(); i++) {
-                    buf.append("\n" + pad + "          "
-                            + "(attribute \"" + cf.attributes.get(i).getName(cf.constant_pool) + "\")");
-                }
-                buf.append("))");
-                break;
+        nl(buf, lmargin + 8, "(constant_pool");
+        for (CPEntry cpe : constant_pool) {
+            cpe.appendM6(buf, lmargin + 20);
         }
+        buf.append(")");
+
+        nl(buf, lmargin + 8, "(fields");
+        for (M6Field f : fields) {
+            nl(buf, lmargin + 20, "(field \"" + f.getName() + "\" "
+                    + ACL2utils.descToACL2TypeStr(f.getDesc()) + " "
+                    + ACL2utils.accessFlagsToString(f.getAccessFlags()) + " " + f.index + ")");
+        }
+        buf.append(")");
+
+        nl(buf, lmargin + 8, "(methods");
+        for (M6Method m : methods) {
+            buf.append("\n" + m.toString(lmargin + 20));
+        }
+        buf.append(")\n");
+
+        buf.append(pad + "        " + "(interfaces");
+        for (String interfaceName : interfaceNames) {
+            buf.append(" \"" + interfaceName.replace('/', '.') + "\"");
+        }
+        buf.append(")\n");
+        buf.append(pad + "        " + ACL2utils.accessFlagsToString(cf.access_flags) + "\n");
+
+        buf.append(pad + "        " + "(attributes");
+
+        for (int i = 0; i < cf.attributes.size(); i++) {
+            buf.append("\n" + pad + "          "
+                    + "(attribute \"" + cf.attributes.get(i).getName(cf.constant_pool) + "\")");
+        }
+        buf.append("))");
         return buf.toString();
     }
 

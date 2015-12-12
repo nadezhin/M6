@@ -53,10 +53,10 @@ public class jvm2acl2 {
             input[i] = args[i + 1];
         }
 
-        processFiles(args[0], collectFileNames(input), Target.M5);
+        processFiles(args[0], collectFileNames(input));
     }
 
-    private static void processFiles(String tablename, String[] args, Target target)
+    private static void processFiles(String tablename, String[] args)
             throws ConstantPoolException {
         M6Class[] classes = new M6Class[args.length];
 
@@ -64,7 +64,7 @@ public class jvm2acl2 {
         for (int i = 0; i < args.length; i++) {
             try {
                 classes[i] = new M6Class(args[i]);
-                classes[i].processClassFile(target);
+                classes[i].processClassFile();
             } catch (java.lang.Exception e) {
                 System.err.println("Could not open file " + args[i] + " " + e);
                 System.exit(0);
@@ -75,38 +75,19 @@ public class jvm2acl2 {
         StringBuffer ctBuf2 = new StringBuffer();
         StringBuffer mapName2P = new StringBuffer();
 
-        switch (target) {
-            case M5:
-                ctBuf2.append("(defconst *" + tablename + "-class-table-in-tagged-form*\n");
-                ctBuf2.append("  (make-class-def\n");
-                ctBuf2.append("    (list\n");
-                break;
-            case M6:
-                ctBuf2.append("(defconst *" + tablename + "-class-table*\n");
-                ctBuf2.append("  (make-static-class-decls \n");
-                break;
-        }
+        ctBuf2.append("(defconst *" + tablename + "-class-table*\n");
+        ctBuf2.append("  (make-static-class-decls \n");
         mapName2P.append("(defconst *package-name-map* \n");
         /* The class table */
         for (int i = 0; i < classes.length; i++) {
 
             String classname = classes[i].getJavaName();
-            switch (target) {
-                case M5:
-                    ctBuf.append("(defconst *" + classname + "-class-decl*\n");
-                    ctBuf.append(classes[i].toString(4, target));
-                    ctBuf.append(")\n\n");
-                    ctBuf2.append("     *" + classname + "-class-decl*");
-                    break;
-                case M6:
-                    ctBuf.append("(defconst *" + classname + "*\n");
-                    ctBuf.append(" (make-class-def\n");
-                    ctBuf.append("  ");
-                    ctBuf.append(classes[i].toString(4, target));
-                    ctBuf.append("))\n\n");
-                    ctBuf2.append("   *" + classname + "*");
-                    break;
-            }
+            ctBuf.append("(defconst *" + classname + "*\n");
+            ctBuf.append(" (make-class-def\n");
+            ctBuf.append("  ");
+            ctBuf.append(classes[i].toString(4));
+            ctBuf.append("))\n\n");
+            ctBuf2.append("   *" + classname + "*");
 
             int offset = classname.lastIndexOf('.');
             String packagename = null;
@@ -123,14 +104,7 @@ public class jvm2acl2 {
                 ctBuf2.append("\n");
             }
         }
-        switch (target) {
-            case M5:
-                ctBuf2.append(")))\n");
-                break;
-            case M6:
-                ctBuf2.append("))\n");
-                break;
-        }
+        ctBuf2.append("))\n");
         mapName2P.append(")");
 
         /* We now output the state to stdout */
@@ -141,14 +115,7 @@ public class jvm2acl2 {
         /* And to a file called "tablename-state.lisp" */
         System.out.println("");
 
-        String outFileName = null;
-        switch (target) {
-            case M5:
-                outFileName = tablename + "-classtableM5.lisp";
-                break;
-            case M6:
-                outFileName = tablename + "-classtable.lisp";
-        }
+        String outFileName = outFileName = tablename + "-classtable.lisp";
         System.out.print("Writing state to file " + outFileName + "...");
         try {
             FileWriter outfile = new FileWriter(outFileName);
@@ -160,24 +127,9 @@ public class jvm2acl2 {
 
             outfile.write("on " + rightNow.getTime().toString() + ".\n;\n\n");
 
-            switch (target) {
-                case M5:
-                    outfile.write("(in-package \"M5\")\n");
-                    outfile.write("(include-book \"models/jvm/m5/utilities\" :dir :system)\n\n");
-                    break;
-                case M6:
-                    break;
-            }
-
             outfile.write(ctBuf.toString() + "\n");
             outfile.write(ctBuf2.toString() + "\n");
-            switch (target) {
-                case M5:
-                    break;
-                case M6:
-                    outfile.write(mapName2P.toString() + "\n");
-                    break;
-            }
+            outfile.write(mapName2P.toString() + "\n");
             outfile.write("\n");
             outfile.flush();
             outfile.close();

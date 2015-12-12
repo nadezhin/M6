@@ -95,10 +95,6 @@ public class jvm2acl2x2 {
 
         start = 0;
 
-        if (args[start].equals("-5")) {
-            start++;
-        }
-
         if (args[start].equals("-d")) {
             start++;
             if (args.length - start < 3) {
@@ -777,7 +773,7 @@ public class jvm2acl2x2 {
         showCalls("java/math/BigDecimal.divide:(Ljava/math/BigDecimal;)Ljava/math/BigDecimal;");
         showCalls("java/math/BigDecimal.multiply:(Ljava/math/BigDecimal;)Ljava/math/BigDecimal;",
                 "java/math/BigDecimal.divide:(Ljava/math/BigDecimal;)Ljava/math/BigDecimal;");
-        
+
         showCalls("sun/misc/FDBigInteger.rightInplaceSub:(Lsun/misc/FDBigInteger;)Lsun/misc/FDBigInteger;");
 
         showCallsOfClasses("java/lang/Character");
@@ -787,7 +783,7 @@ public class jvm2acl2x2 {
         showCallsOfClasses("java/lang/Math");
         showCallsOfClasses("java/lang/StrictMath");
         showCallsOfClasses("java/lang/Math", "java/lang/StrictMath");
-        
+
         showCallsOfClasses("java/math/BigDecimal");
         showCallsOfClasses("java/math/BigInteger");
         showCallsOfClasses("sun/misc/FDBigInteger");

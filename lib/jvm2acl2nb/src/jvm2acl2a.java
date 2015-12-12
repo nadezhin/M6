@@ -63,7 +63,7 @@ public class jvm2acl2a {
     private static String processOneFile(String classfn, String pathn, StringBuffer table) {
         try {
             M6Class curClass = new M6Class(classfn);
-            curClass.processClassFile(Target.M6);
+            curClass.processClassFile();
 
             StringBuffer ctBuf = new StringBuffer();
             String classname = curClass.getJavaName();
@@ -71,7 +71,7 @@ public class jvm2acl2a {
             ctBuf.append("(defconst *" + classname + "*\n");
             ctBuf.append(" (make-class-def\n");
             ctBuf.append("  ");
-            ctBuf.append(curClass.toString(4, Target.M6));
+            ctBuf.append(curClass.toString(4));
             ctBuf.append("))\n\n");
 
             writeToFile(pathn + "/*" + classname + "*.lisp", ctBuf);

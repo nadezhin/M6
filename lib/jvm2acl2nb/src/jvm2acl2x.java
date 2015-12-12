@@ -13,7 +13,6 @@ public class jvm2acl2x {
 
     private static boolean abstract_mode = false;
     private static boolean keep_lntlvt = false;
-    private static Target target = Target.M6;
 
     private static String defaultpath = "/var/local/";
 
@@ -96,15 +95,6 @@ public class jvm2acl2x {
             }
         }
 
-        if (args[start].equals("-5")) {
-            target = Target.M5;
-            start++;
-            if (args.length - start < 2) {
-                System.err.println(usage);
-                System.exit(0);
-            }
-        }
-
         if (args[start].equals("-d")) {
             start++;
             if (args.length - start < 3) {
@@ -135,7 +125,7 @@ public class jvm2acl2x {
     private static String processOneFile(String classfn, String pathn) {
         try {
             M6Class curClass = new M6Class(classfn);
-            curClass.processClassFile(target);
+            curClass.processClassFile();
 
             StringBuilder ctBuf = new StringBuilder();
             String classname = curClass.getJavaName();
@@ -144,25 +134,12 @@ public class jvm2acl2x {
                 classname = classname + "-abs";
             }
 
-            switch (target) {
-                case M5:
-                    ctBuf.append("(in-package \"M5\")\n");
-                    ctBuf.append("(include-book \"models/jvm/m5/m5\" :dir :system)\n\n");
-                    ctBuf.append("\n");
-                    ctBuf.append("(defconst *" + classname + "*\n");
-                    ctBuf.append(curClass.toString(4, target));
-                    ctBuf.append(")\n\n");
-                    writeToFile(pathn + "/" + classname + ".lisp", ctBuf.toString());
-                    break;
-                case M6:
-                    ctBuf.append("(defconst *" + classname + "*\n");
-                    ctBuf.append(" (make-class-def\n");
-                    ctBuf.append("  ");
-                    ctBuf.append(curClass.toString(4, target));
-                    ctBuf.append("))\n\n");
-                    writeToFile(pathn + "/*" + classname + "*.lisp", ctBuf.toString());
-                    break;
-            }
+            ctBuf.append("(defconst *" + classname + "*\n");
+            ctBuf.append(" (make-class-def\n");
+            ctBuf.append("  ");
+            ctBuf.append(curClass.toString(4));
+            ctBuf.append("))\n\n");
+            writeToFile(pathn + "/*" + classname + "*.lisp", ctBuf.toString());
 
             if (keep_lntlvt) {
                 writeToFile(pathn + "/*" + classname + "*.lnt.lisp", curClass.getlntdesc());

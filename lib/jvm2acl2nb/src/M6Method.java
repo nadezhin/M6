@@ -3,7 +3,6 @@
  * $Id: M6Method.java,v 1.12 2003/06/17 22:11:16 hbl Exp hbl $
  */
 
-import com.sun.tools.classfile.AccessFlags;
 import com.sun.tools.classfile.Attribute;
 import com.sun.tools.classfile.ClassFile;
 import com.sun.tools.classfile.Code_attribute;
@@ -254,100 +253,64 @@ public class M6Method {
      *
      * @param lmargin	The number of spaces of indentation to place before the
      * output
-     * @param target Target JVM model
      * @return	A pretty-printed String representing this method.
      */
-    public String toString(int lmargin, Target target) throws ConstantPoolException {
+    public String toString(int lmargin) throws ConstantPoolException {
         if (!processed) {
             return "You must call processMethod first!";
         }
 
         StringBuilder sb = new StringBuilder();
-        switch (target) {
-            case M5:
-                if (ACL2utils.NAME_AND_TYPE) {
-                    indent(sb, lmargin);
-                    sb
-                            .append("'(\"")
-                            .append(name)
-                            .append(":")
-                            .append(desc)
-                            .append("\"");
-                } else {
-                    indent(sb, lmargin);
-                    sb.append("'(\"" + name + "\" (");
-                    for (int i = 0; i < params.size(); i++) {
-                        sb.append(params.get(i));
+        indent(sb, lmargin);
+        sb.append("(method \"" + name + "\"");
+        nl(sb, lmargin + 6, "(parameters ");
+        for (int i = 0; i < params.size(); i++) {
+            sb.append(ACL2utils.descToACL2TypeStr(params.get(i)));
 
-                        if (i < (params.size() - 1)) {
-                            sb.append(" ");
-                        }
-                    }
-                    sb.append(')');
-                }
-                sb.append(' ');
-                sb.append((m.access_flags.is(AccessFlags.ACC_SYNCHRONIZED) ? "t" : "nil") + "\n");
-
-                for (int i = 0; i < m6instructions.size(); i++) {
-                    indent(sb, lmargin + 2);
-                    sb.append(m6instructions.get(i)).append('\n');
-                }
-                indent(sb, lmargin + 1);
-                sb.append(")");
-                break;
-            case M6:
-                indent(sb, lmargin);
-                sb.append("(method \"" + name + "\"");
-                nl(sb, lmargin + 6, "(parameters ");
-                for (int i = 0; i < params.size(); i++) {
-                    sb.append(ACL2utils.descToACL2TypeStr(params.get(i)));
-
-                    if (i < (params.size() - 1)) {
-                        sb.append(" ");
-                    }
-                }
-                sb.append(")");
-                nl(sb, lmargin + 6, "(returntype . " + ACL2utils.descToACL2TypeStr(returntype) + ")");
-                nl(sb, lmargin + 6, ACL2utils.accessFlagsToString(m.access_flags));
-
-                nl(sb, lmargin + 6, "(code");
-                if (cai != null && !no_method_body) {
-                    nl(sb, lmargin + 11, "(max_stack . " + max_stack + ")"
-                            + " (max_locals . " + max_locals + ")"
-                            + " (code_length . " + code_length + ")");
-                    nl(sb, lmargin + 11, "(parsedcode");
-
-                    for (int i = 0; i < m6instructions.size(); i++) {
-                        nl(sb, lmargin + 14, m6instructions.get(i));
-                    }
-                    sb.append(")");
-
-                    nl(sb, lmargin + 11, "(Exceptions ");
-                    for (int i = 0; i < cai.exception_table.length; i++) {
-                        Code_attribute.Exception_data ed = cai.exception_table[i];
-                        String catchType = ed.catch_type != 0
-                                ? cf.constant_pool.getClassInfo(ed.catch_type).getName().replace('/', '.')
-                                : "java/lang.Throwable";
-                        String acl2Type = ACL2utils.classNameToACL2TypeStr(catchType);
-                        nl(sb, lmargin + 13,
-                                "(handler " + ed.start_pc + " " + ed.end_pc + "  " + ed.handler_pc + " " + acl2Type + ")");
-                    }
-                    sb.append(')');
-
-                    nl(sb, lmargin + (sm != null ? 12 : 11), "(StackMap ");
-                    if (sm != null) {
-                        for (int i = 0; i < sm.entries.length; i++) {
-                            sb.append('\n');
-                            StackMap_attribute.stack_map_frame smf
-                                    = (StackMap_attribute.stack_map_frame) sm.entries[i];
-                            appendStackMapFrame(sb, lmargin + 17, smf, cf.constant_pool, max_locals);
-                        }
-                    }
-                    sb.append(")");
-                }
-                sb.append("))");
-                break;
+            if (i < (params.size() - 1)) {
+                sb.append(" ");
+            }
         }
+        sb.append(")");
+        nl(sb, lmargin + 6, "(returntype . " + ACL2utils.descToACL2TypeStr(returntype) + ")");
+        nl(sb, lmargin + 6, ACL2utils.accessFlagsToString(m.access_flags));
+
+        nl(sb, lmargin + 6, "(code");
+        if (cai != null && !no_method_body) {
+            nl(sb, lmargin + 11, "(max_stack . " + max_stack + ")"
+                    + " (max_locals . " + max_locals + ")"
+                    + " (code_length . " + code_length + ")");
+            nl(sb, lmargin + 11, "(parsedcode");
+
+            for (int i = 0; i < m6instructions.size(); i++) {
+                nl(sb, lmargin + 14, m6instructions.get(i));
+            }
+            sb.append(")");
+
+            nl(sb, lmargin + 11, "(Exceptions ");
+            for (int i = 0; i < cai.exception_table.length; i++) {
+                Code_attribute.Exception_data ed = cai.exception_table[i];
+                String catchType = ed.catch_type != 0
+                        ? cf.constant_pool.getClassInfo(ed.catch_type).getName().replace('/', '.')
+                        : "java/lang.Throwable";
+                String acl2Type = ACL2utils.classNameToACL2TypeStr(catchType);
+                nl(sb, lmargin + 13,
+                        "(handler " + ed.start_pc + " " + ed.end_pc + "  " + ed.handler_pc + " " + acl2Type + ")");
+            }
+            sb.append(')');
+
+            nl(sb, lmargin + (sm != null ? 12 : 11), "(StackMap ");
+            if (sm != null) {
+                for (int i = 0; i < sm.entries.length; i++) {
+                    sb.append('\n');
+                    StackMap_attribute.stack_map_frame smf
+                            = (StackMap_attribute.stack_map_frame) sm.entries[i];
+                    appendStackMapFrame(sb, lmargin + 17, smf, cf.constant_pool, max_locals);
+                }
+            }
+            sb.append(")");
+        }
+        sb.append("))");
         return sb.toString();
     }
 
@@ -562,25 +525,14 @@ public class M6Method {
      *
      * @param constant_pool	The constant pool element from the M6Class object
      * representing the outer class from which this method is taken from.
-     * @param target Target JVM model
      */
-    public void processMethod(Target target) throws ConstantPoolException, DescriptorException {
+    public void processMethod() throws ConstantPoolException, DescriptorException {
         /* The name of the method */
         if (debug) {
             System.out.println("\nProcessing method: " + name + "Parameters: " + params);
         }
         /* Process the code attribute */
-        if (cai == null || no_method_body) {
-            switch (target) {
-                case M5:
-                    if (m.access_flags.is(AccessFlags.ACC_NATIVE)) {
-                        m6instructions.add("NIL ; native method");
-                    }
-                    break;
-                case M6:
-                    break;
-            }
-        } else {
+        if (cai != null && !no_method_body) {
             LinkedHashMap<Integer, Integer> labels = new LinkedHashMap<>();
             LabelsVisitor labelsVisitor = new LabelsVisitor();
             for (Instruction inst : cai.getInstructions()) {
@@ -611,30 +563,18 @@ public class M6Method {
                     m6instructions.add("; " + "line_number #" + lnt.line_number_table[li].line_number);
                     li++;
                 }
-                String resultStr = parseInst(instr, offset, labels, target);
+                String resultStr = parseInst(instr, offset, labels);
                 if (resultStr != null) {
                     m6instructions.add(resultStr);
                     offset = offset + instr.length();
                 }
             }
 
-            switch (target) {
-                case M5:
-                    break;
-                case M6:
-                    // resolve any tag to absolute offsets.
-                    resolveTagInCode();
-                    break;
-            }
+            // resolve any tag to absolute offsets.
+            resolveTagInCode();
 
             // add an end marker to the code.
-            switch (target) {
-                case M5:
-                    break;
-                case M6:
-                    m6instructions.add("(endofcode " + code_length + ")");
-                    break;
-            }
+            m6instructions.add("(endofcode " + code_length + ")");
         }
         processed = true;
     }
@@ -820,70 +760,25 @@ public class M6Method {
     private String parseInst(
             Instruction inst,
             int offset,
-            Map<Integer, Integer> labels,
-            Target targetModel) throws ConstantPoolException {
+            Map<Integer, Integer> labels) throws ConstantPoolException {
         StringBuffer tmp = new StringBuffer();
         StringBuilder tmp2 = new StringBuilder();
 
-        ParseVisitor parseVisitor;
-        switch (targetModel) {
-            case M5:
-                parseVisitor = new ParseVisitorM5(labels, tmp2);
-                break;
-            case M6:
-                parseVisitor = new ParseVisitorM6(labels, tmp2);
-                break;
-            default:
-                throw new AssertionError();
-        }
+        ParseVisitor parseVisitor = new ParseVisitorM6(labels, tmp2);
 //        System.out.println(inst.toString());
 
-        switch (targetModel) {
-            case M5:
-                tmp.append("(");
-//                if (labels.containsKey(inst.getPC())) {
-                tmp2.append("; " + inst.getPC());
-//                }
-                break;
-            case M6:
-                tmp.append("(" + offset + " (");
-                if (labels.containsKey(inst.getPC())) {
-                    String label = "TAG_" + labels.get(inst.getPC());
-                    tagTable.put(label, new Integer(offset));
-                    tmp2.append(";;at " + label);
-                }
-                break;
+        tmp.append("(" + offset + " (");
+        if (labels.containsKey(inst.getPC())) {
+            String label = "TAG_" + labels.get(inst.getPC());
+            tagTable.put(label, new Integer(offset));
+            tmp2.append(";;at " + label);
         }
-
-        tmp.append(inst.accept(parseVisitor, null));
-
-        switch (targetModel) {
-            case M5:
-                tmp.append(")");
-                break;
-            case M6:
-                tmp.append("))");
-                break;
-        }
+        tmp.append(inst.accept(parseVisitor, null)).append("))");
         // round the line length to multiple of 8.
         if (!tmp2.equals("")) {
-            int pos;
-            switch (targetModel) {
-                case M5:
-
-                    pos = 56;
-                    while (pos <= tmp.length()) {
-                        pos += 8;
-                    }
-                    break;
-                case M6:
-                    pos = 20;
-                    while (pos <= tmp.length()) {
-                        pos += 20;
-                    }
-                    break;
-                default:
-                    throw new AssertionError();
+            int pos = 20;
+            while (pos <= tmp.length()) {
+                pos += 20;
             }
             int bc = pos - tmp.length();
             for (int j = 0; j < bc; j++) {
