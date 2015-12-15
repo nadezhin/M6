@@ -1,9 +1,7 @@
 
 import com.sun.tools.classfile.AccessFlags;
 import com.sun.tools.classfile.Attribute;
-import com.sun.tools.classfile.Attributes;
 import com.sun.tools.classfile.ClassFile;
-import com.sun.tools.classfile.ConstantPool;
 import com.sun.tools.classfile.ConstantPoolException;
 import com.sun.tools.classfile.ConstantValue_attribute;
 import com.sun.tools.classfile.DescriptorException;

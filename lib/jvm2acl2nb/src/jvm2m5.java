@@ -12,7 +12,6 @@ import com.sun.tools.classfile.ClassFile;
 import com.sun.tools.classfile.Code_attribute;
 import com.sun.tools.classfile.ConstantPool;
 import com.sun.tools.classfile.ConstantPoolException;
-import com.sun.tools.classfile.ConstantValue_attribute;
 import com.sun.tools.classfile.Field;
 import com.sun.tools.classfile.Instruction;
 import com.sun.tools.classfile.LineNumberTable_attribute;
@@ -23,90 +22,40 @@ import java.io.FileWriter;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Calendar;
 import java.util.List;
 
 public class jvm2m5 implements
         Instruction.KindVisitor<StringBuilder, Void>,
-        ConstantPool.Visitor<Void, Opcode> {
+        ConstantPool.Visitor<String, Opcode> {
 
-    private static boolean abstract_mode = false;
+    private static final String usage
+            = "Usage: jvm2m5 <output directory> <file names>* [<directory names>*]\n";
 
-    private static String defaultpath = "/var/local/";
+    public static void main(String[] args) {
 
-    private static String usage
-            = "Usage: jvm2m5 [-a] [-g] [-d default-path-prefix] <output directory> <file names>* [<directory names>*]\n";
+        System.err.println("JVM --> M5  An automatic M5 state generator.");
+        if (args.length <= 1) {
+            System.err.println(usage);
+            System.exit(0);
+        }
 
-    final ClassFile cf;
-    final ConstantPool cp;
-    final List<ConstantPool.CPInfo> constant_pool0 = new ArrayList<>();
-    final StringBuilder sb = new StringBuilder();
-    final StringBuilder sb2 = new StringBuilder();
-
-    jvm2m5(ClassFile cf) throws ConstantPoolException {
-        this.cf = cf;
-        this.cp = cf.constant_pool;
-        for (Field field : cf.fields) {
-            ConstantValue_attribute va
-                    = (ConstantValue_attribute) field.attributes.get(Attribute.ConstantValue);
-            if (va != null) {
-                ConstantPool.CPInfo info = cf.constant_pool.get(va.constantvalue_index);
-                if (!constant_pool0.contains(info)) {
-                    constant_pool0.add(info);
-                }
+        String outputPath = args[0];
+        String[] collectedFiles = collectFileNames(Arrays.copyOfRange(args, 1, args.length));
+        for (String fn : collectedFiles) {
+            try {
+                processOneFile(fn, outputPath);
+            } catch (java.lang.Exception e) {
+                System.err.println("Could not open file " + fn + " " + e);
+                System.exit(0);
             }
         }
-        for (Method meth : cf.methods) {
-            Code_attribute cai = (Code_attribute) meth.attributes.get(Attribute.Code);
-            if (cai != null && !abstract_mode) {
-                AbstractInstructionVisitor ldcVisitor = new AbstractInstructionVisitor<Void, Void>(null) {
-                    @Override
-                    public Void visitConstantPoolRef(Instruction instr, int index, Void p) {
-                        switch (instr.getOpcode()) {
-                            case LDC:
-                            case LDC_W:
-                            case LDC2_W:
-                                try {
-                                    ConstantPool.CPInfo info = cf.constant_pool.get(index);
-                                    if (!constant_pool0.contains(info)) {
-                                        constant_pool0.add(info);
-                                    }
-                                } catch (ConstantPoolException e) {
-                                }
-                        }
-                        return null;
-                    }
-
-                };
-                for (Instruction inst : cai.getInstructions()) {
-                    inst.accept(ldcVisitor, null);
-                }
-            }
-        }
-    }
-
-    int curIndent;
-
-    void indent(int delta) {
-        curIndent += delta;
-    }
-
-    Void nl(String s) {
-        sb.append('\n');
-        for (int i = 0; i < curIndent; i++) {
-            sb.append(' ');
-        }
-        sb.append(s);
-        return null;
     }
 
     private static String[] collectFileNames(String[] args) {
-        List files = new ArrayList<>();
-        String[] reslt = null;
+        List<String> files = new ArrayList<>();
         try {
             for (int i = 0; i < args.length; i++) {
                 File cur = new File(args[i]);
-                System.out.println(args[i]);
                 if (cur.isDirectory()) {
                     String[] nextlevel = cur.list();
                     Arrays.sort(nextlevel);
@@ -128,67 +77,10 @@ public class jvm2m5 implements
                     }
                 }
             }
-
-            reslt = new String[files.size()];
-            for (int i = 0; i < files.size(); i++) {
-                reslt[i] = (String) files.get(i);
-                System.out.println(reslt[i]);
-            }
         } catch (Exception e) {
             System.out.println("File reading error!");
         }
-        return reslt;
-    }
-
-    public static void main(String[] args) {
-
-        int start = 0;
-
-        System.err.println("JVM --> M5  An automatic M5 state generator.");
-
-        if (args.length <= 1) {
-            System.err.println(usage);
-            System.exit(0);
-        }
-
-        start = 0;
-
-        if (args[start].equals("-a")) {
-            abstract_mode = true;
-            start++;
-            if (args.length - start < 2) {
-                System.err.println(usage);
-                System.exit(0);
-            }
-        }
-
-        if (args[start].equals("-d")) {
-            start++;
-            if (args.length - start < 3) {
-                System.err.println(usage);
-                System.exit(0);
-            }
-            defaultpath = args[start];
-            start++;
-
-            if (defaultpath.charAt(defaultpath.length() - 1) != '/') {
-                defaultpath = defaultpath + "/";
-            }
-        }
-
-        String tablepath = args[start];
-        if (tablepath.lastIndexOf('/') != -1) {
-            tablepath = tablepath.substring(0, tablepath.lastIndexOf('/'));
-        }
-        String[] collectedFiles = collectFileNames(Arrays.copyOfRange(args, start + 1, args.length));
-        for (String fn : collectedFiles) {
-            try {
-                processOneFile(fn, tablepath);
-            } catch (java.lang.Exception e) {
-                System.err.println("Could not open file " + fn + " " + e);
-                System.exit(0);
-            }
-        }
+        return files.toArray(new String[files.size()]);
     }
 
     private static void processOneFile(String classfn, String pathn) {
@@ -196,26 +88,62 @@ public class jvm2m5 implements
             ClassFile cf = ClassFile.read(Paths.get(classfn));
             String classname = cf.getName().replace('/', '.');
             jvm2m5 printVisitor = new jvm2m5(cf);
-            printVisitor.printClass();
-            assert printVisitor.curIndent == 0;
             String fn = pathn + "/" + classname + ".lisp";
-            System.out.println("Writing state to file " + defaultpath + fn);
-            FileWriter outfile = new FileWriter(defaultpath + fn);
-            outfile.write("; " + fn + "\n");
-            outfile.write("; Automatically generated by jvm2acl2x ");
-
-            Calendar rightNow = Calendar.getInstance();
-
-            outfile.write(/*"on " + rightNow.getTime().toString() +*/".\n;\n\n");
-
-            outfile.write(printVisitor.sb.toString() + "\n");
-            outfile.write("\n");
+            System.out.println("Writing " + fn);
+            FileWriter outfile = new FileWriter(fn);
+            printVisitor.printClass();
+            assert printVisitor.indent == 0;
+            outfile.write(printVisitor.sb.toString());
             outfile.close();
         } catch (Exception e) {
             System.err.println(e);
             e.printStackTrace();
             System.exit(-1);
         }
+    }
+
+    final ClassFile cf;
+    final ConstantPool cp;
+    final StringBuilder sb = new StringBuilder();
+    final StringBuilder sb2 = new StringBuilder();
+
+    jvm2m5(ClassFile cf) throws ConstantPoolException {
+        this.cf = cf;
+        cp = cf.constant_pool;
+    }
+
+    int indent;
+    int mark;
+
+    void indent(int delta) {
+        indent += delta;
+    }
+
+    Void nl(String s) {
+        if (sb2.length() > 0) {
+            // round the line length to multiple of 8.
+            int pos = 56;
+            int sbl = sb.length();
+            while (pos <= sb.length() - mark) {
+                pos += 8;
+                if (pos > 1000) {
+                    pos = pos;
+                }
+            }
+            int bc = mark + pos - sb.length();
+            for (int j = 0; j < bc; j++) {
+                sb.append(" ");
+            }
+            sb.append(sb2);
+            sb2.setLength(0);
+        }
+        sb.append('\n');
+        for (int i = 0; i < indent; i++) {
+            sb.append(' ');
+        }
+        mark = sb.length();
+        sb.append(s);
+        return null;
     }
 
     //at the first stage, I won't dealing with the correct output format
@@ -228,8 +156,10 @@ public class jvm2m5 implements
      * specifies this class in M5.
      */
     public String printClass() throws ConstantPoolException {
-        sb.append("(in-package \"M5\")");
-        nl("(include-book \"models/jvm/m5/m5\" :dir :system)\n");
+        sb.append("; Automatically generated by jvm2m5");
+        nl("");
+        nl("(in-package \"M5\")");
+        nl("(include-book \"models/jvm/m5/m5\" :dir :system)");
         nl("");
         nl("(defconst *" + cf.getName().replace('/', '.') + "*");
         indent(4);
@@ -247,8 +177,8 @@ public class jvm2m5 implements
         indent(2);
         for (Field f : cf.fields) {
             if (!f.access_flags.is(AccessFlags.ACC_STATIC)) {
-                String fname = f.getName(cf.constant_pool);
-                String fdesc = f.descriptor.getValue(cf.constant_pool);
+                String fname = f.getName(cp);
+                String fdesc = f.descriptor.getValue(cp);
                 nl("\"" + fname + ":" + fdesc + "\"");
             }
         }
@@ -259,22 +189,28 @@ public class jvm2m5 implements
         indent(2);
         for (Field f : cf.fields) {
             if (f.access_flags.is(AccessFlags.ACC_STATIC)) {
-                String fname = f.getName(cf.constant_pool);
-                String fdesc = f.descriptor.getValue(cf.constant_pool);
+                String fname = f.getName(cp);
+                String fdesc = f.descriptor.getValue(cp);
                 nl("\"" + fname + ":" + fdesc + "\"");
             }
         }
         sb.append(")");
         indent(-2);
 
-        nl(" '(");
-        indent(2);
+        nl(" '(nil");
+        indent(3);
         CPPrintM5 cpp = new CPPrintM5();
-        for (ConstantPool.CPInfo info : constant_pool0) {
+        int ind = 1;
+        for (ConstantPool.CPInfo info : cp.entries()) {
             info.accept(cpp, null);
+            sb2.append("; " + ind);
+            ind += info.size();
+            for (int i = 1; i < info.size(); i++) {
+                nl("nil");
+            }
         }
-        indent(-2);
-        nl(" )");
+        indent(-3);
+        nl("  )");
 
         nl(" (list");
         indent(2);
@@ -283,10 +219,8 @@ public class jvm2m5 implements
         }
         sb.append(")");
         indent(-2);
-        nl(" '(REF -1)))");
+        nl(" '(ref -1)))");
         indent(-4);
-        nl("");
-        nl("");
         return sb.toString();
     }
 
@@ -305,7 +239,7 @@ public class jvm2m5 implements
                 .append((method.access_flags.is(AccessFlags.ACC_SYNCHRONIZED) ? "t" : "nil"));
         indent(2);
 
-        if (cai != null && !abstract_mode) {
+        if (cai != null) {
             LineNumberTable_attribute lnt
                     = (LineNumberTable_attribute) cai.attributes.get(Attribute.LineNumberTable);
             int li = 0; // index in linenumber table
@@ -315,39 +249,18 @@ public class jvm2m5 implements
                     nl("; " + "line_number #" + lnt.line_number_table[li].line_number);
                     li++;
                 }
-                sb2.setLength(0);
-                sb2.append("; " + instr.getPC());
-
-                nl("");
-                int mark = sb.length();
-                sb.append("(");
+                nl("(");
                 instr.accept(this, null);
                 sb.append(")");
-
-                // round the line length to multiple of 8.
-                int pos = 56;
-                while (pos <= sb.length() - mark) {
-                    pos += 8;
-                }
-                int bc = mark + pos - sb.length();
-                for (int j = 0; j < bc; j++) {
-                    sb.append(" ");
-                }
-                sb.append(sb2);
+                sb2.insert(0, "; " + instr.getPC());
             }
         } else {
             if (method.access_flags.is(AccessFlags.ACC_NATIVE)) {
-                nl("NIL ; native method");
+                nl("; native method");
             }
         }
         indent(-2);
         nl(" )");
-    }
-
-    int cpref(ConstantPool.CPInfo c) {
-        int ind = constant_pool0.indexOf(c);
-        assert ind >= 0;
-        return ind;
     }
 
     // Instruction.KindVisitor<String, Void> methods
@@ -374,8 +287,10 @@ public class jvm2m5 implements
     public StringBuilder visitConstantPoolRef(Instruction instr, int index, Void p) {
         sb.append(instr.getMnemonic());
         try {
-            cp.get(index).accept(this, instr.getOpcode());
-            return sb;
+            ConstantPool.CPInfo info = cp.get(index);
+            sb2.append(" ");
+            String cpref = info.accept(this, instr.getOpcode());
+            return sb.append(cpref != null ? cpref : " " + index);
         } catch (ConstantPoolException e) {
             throw new AssertionError(e);
         }
@@ -385,8 +300,10 @@ public class jvm2m5 implements
     public StringBuilder visitConstantPoolRefAndValue(Instruction instr, int index, int value, Void p) {
         sb.append(instr.getMnemonic());
         try {
-            cp.get(index).accept(this, instr.getOpcode());
-            return sb.append(' ').append(value);
+            ConstantPool.CPInfo info = cp.get(index);
+            sb2.append(" ");
+            String cpref = info.accept(this, instr.getOpcode());
+            return sb.append(cpref != null ? cpref : " " + index).append(' ').append(value);
         } catch (ConstantPoolException e) {
             throw new AssertionError(e);
         }
@@ -460,182 +377,118 @@ public class jvm2m5 implements
 
     // ConstantPool.Visitor<Void, Opcode> methods
     @Override
-    public Void visitClass(ConstantPool.CONSTANT_Class_info c, Opcode op) {
+    public String visitClass(ConstantPool.CONSTANT_Class_info c, Opcode op) {
         try {
             String name = c.getName();
-
-            switch (op) {
-                case LDC:
-                case LDC_W:
-                case LDC2_W:
-                    sb.append(' ').append(cpref(c));
-                    sb2.append(";;CLASS:: \"" + name + "\"");
-                    break;
-                default:
-                    sb.append(' ').append("\"" + name + "\"");
-                    break;
-            }
+            sb2.append("class " + name.replace('/', '.'));
+            return null;
         } catch (ConstantPoolException e) {
-            sb.append(e.getMessage());
+            return e.getMessage();
         }
+    }
+
+    @Override
+    public String visitDouble(ConstantPool.CONSTANT_Double_info c, Opcode op) {
+        sb2.append(c.value).append("d");
         return null;
     }
 
     @Override
-    public Void visitDouble(ConstantPool.CONSTANT_Double_info c, Opcode op) {
-        sb.append(' ').append(cpref(c));
-        sb2.append(op == Opcode.LDC2_W ? ";; DOUBLE:: \"" : ";;Doulbe:: \"")
-                .append(c.value)
-                .append("\"");
-        return null;
-    }
-
-    @Override
-    public Void visitFieldref(ConstantPool.CONSTANT_Fieldref_info c, Opcode op) {
+    public String visitFieldref(ConstantPool.CONSTANT_Fieldref_info c, Opcode op) {
         try {
             String className = c.getClassName();
             ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
             String name = infoNameAndType.getName();
             String desc = infoNameAndType.getType();
-
-            sb.append(" \"")
-                    .append(className)
-                    .append("\" \"")
-                    .append(name)
-                    .append(':')
-                    .append(desc)
-                    .append("\"");
+            sb2.append(className.replace('/', '.') + "." + name + ":" + desc);
+            return null;
+//            return " \"" + className + "\" \"" + name + ":" + desc + "\"";
         } catch (ConstantPoolException e) {
-            sb.append(e.getMessage());
+            return e.getMessage();
         }
+    }
+
+    @Override
+    public String visitFloat(ConstantPool.CONSTANT_Float_info c, Opcode op) {
+        sb2.append(c.value).append("f");
         return null;
     }
 
     @Override
-    public Void visitFloat(ConstantPool.CONSTANT_Float_info c, Opcode op) {
-        sb.append(' ').append(cpref(c));
-        sb2.append(";;FLOAT:: \"")
-                .append(c.value)
-                .append("\"");
+    public String visitInteger(ConstantPool.CONSTANT_Integer_info c, Opcode op) {
+        sb2.append(c.value);
         return null;
     }
 
     @Override
-    public Void visitInteger(ConstantPool.CONSTANT_Integer_info c, Opcode op) {
-        sb.append(' ').append(cpref(c));
-        sb2.append(";;INT:: \"")
-                .append(c.value)
-                .append("\"");
-        return null;
-    }
-
-    @Override
-    public Void visitInterfaceMethodref(ConstantPool.CONSTANT_InterfaceMethodref_info c, Opcode op) {
+    public String visitInterfaceMethodref(ConstantPool.CONSTANT_InterfaceMethodref_info c, Opcode op) {
         try {
             String className = c.getClassName();
             ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
             String name = infoNameAndType.getName();
             String desc = infoNameAndType.getType();
-
-            sb.append(' ');
-            String[] ss = splitMethodDesc(desc);
-            int paramCount = ss.length - 1;
-            for (int i = 1; i < ss.length; i++) {
-                if (ss[i].equals("D") || ss[i].equals("J")) {
-                    paramCount++;
-                }
-            }
-            sb.append("\"")
-                    .append(className)
-                    .append("\" \"")
-                    .append(name)
-                    .append(':')
-                    .append(desc)
-                    .append("\" ")
-                    .append(paramCount);
+            sb2.append(className.replace('/', '.') + "." + name + ":" + desc);
+            return null;
         } catch (ConstantPoolException e) {
-            sb.append(e.getMessage());
+            return e.getMessage();
         }
-        return null;
     }
 
     @Override
-    public Void visitInvokeDynamic(ConstantPool.CONSTANT_InvokeDynamic_info c, Opcode op) {
+    public String visitInvokeDynamic(ConstantPool.CONSTANT_InvokeDynamic_info c, Opcode op) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     @Override
-    public Void visitLong(ConstantPool.CONSTANT_Long_info c, Opcode op) {
-        sb.append(' ').append(cpref(c));
-        sb2.append(op == Opcode.LDC2_W ? ";; LONG:: \"" : ";;Long:: \"")
-                .append(c.value)
-                .append("\"");
+    public String visitLong(ConstantPool.CONSTANT_Long_info c, Opcode op) {
+        sb2.append(c.value).append("f");
         return null;
     }
 
     @Override
-    public Void visitNameAndType(ConstantPool.CONSTANT_NameAndType_info c, Opcode op) {
+    public String visitNameAndType(ConstantPool.CONSTANT_NameAndType_info c, Opcode op) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     @Override
-    public Void visitMethodref(ConstantPool.CONSTANT_Methodref_info c, Opcode op) {
+    public String visitMethodref(ConstantPool.CONSTANT_Methodref_info c, Opcode op) {
         try {
             String className = c.getClassName();
             ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
             String name = infoNameAndType.getName();
             String desc = infoNameAndType.getType();
-
-            sb.append(' ');
-            String[] ss = splitMethodDesc(desc);
-            int paramCount = ss.length - 1;
-            for (int i = 1; i < ss.length; i++) {
-                if (ss[i].equals("D") || ss[i].equals("J")) {
-                    paramCount++;
-                }
-            }
-            sb.append("\"")
-                    .append(className)
-                    .append("\" \"")
-                    .append(name)
-                    .append(':')
-                    .append(desc)
-                    .append("\"")
-                    .append(' ')
-                    .append(paramCount);
+            sb2.append(className.replace('/', '.') + "." + name + ":" + desc);
+            return null;
         } catch (ConstantPoolException e) {
-            sb.append(e.getMessage());
+            return e.getMessage();
         }
-        return null;
     }
 
     @Override
-    public Void visitMethodHandle(ConstantPool.CONSTANT_MethodHandle_info c, Opcode op) {
+    public String visitMethodHandle(ConstantPool.CONSTANT_MethodHandle_info c, Opcode op) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     @Override
-    public Void visitMethodType(ConstantPool.CONSTANT_MethodType_info c, Opcode op) {
+    public String visitMethodType(ConstantPool.CONSTANT_MethodType_info c, Opcode op) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     @Override
-    public Void visitString(ConstantPool.CONSTANT_String_info c, Opcode op) {
+    public String visitString(ConstantPool.CONSTANT_String_info c, Opcode op) {
         try {
             String value = c.getString();
-
-            sb.append(' ').append(cpref(c));
-            sb2.append(";;STRING:: \"");
+            sb2.append("\"");
             appendString(sb2, value);
             sb2.append("\"");
+            return null;
         } catch (ConstantPoolException e) {
-            sb.append(e.getMessage());
+            return e.getMessage();
         }
-        return null;
     }
 
     @Override
-    public Void visitUtf8(ConstantPool.CONSTANT_Utf8_info cnstnt, Opcode op) {
+    public String visitUtf8(ConstantPool.CONSTANT_Utf8_info cnstnt, Opcode op) {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -644,7 +497,7 @@ public class jvm2m5 implements
         @Override
         public Void visitClass(ConstantPool.CONSTANT_Class_info c, Void p) {
             try {
-                return nl("(CLASS (REF -1) \"" + c.getName() + "\")");
+                return nl("(class (ref -1) \"" + c.getName() + "\")");
             } catch (ConstantPoolException e) {
                 return nl(e.getMessage());
             }
@@ -652,31 +505,57 @@ public class jvm2m5 implements
 
         @Override
         public Void visitDouble(ConstantPool.CONSTANT_Double_info c, Void p) {
-            return nl("(DOUBLE #x"
+            return nl("(double #x"
                     + padLeft(Long.toHexString(Double.doubleToRawLongBits(c.value)), 16)
                     + ") ; " + Double.toHexString(c.value) + " " + c.value);
         }
 
         @Override
         public Void visitFieldref(ConstantPool.CONSTANT_Fieldref_info c, Void p) {
-            return nl("(fieldref)");
+            try {
+                String className = c.getClassName();
+                ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
+                String name = infoNameAndType.getName();
+                String desc = infoNameAndType.getType();
+
+                int size = desc.equals("D") || desc.equals("J") ? 2 : 1;
+                return nl("(fieldref \"" + className + "\" \"" + name + ":" + desc + "\" " + size + ")");
+            } catch (ConstantPoolException e) {
+                return nl("\"" + e.getMessage() + "\"");
+            }
         }
 
         @Override
         public Void visitFloat(ConstantPool.CONSTANT_Float_info c, Void p) {
-            return nl("(FLOAT #x"
+            return nl("(float #x"
                     + padLeft(Integer.toHexString(Float.floatToRawIntBits(c.value)), 8)
                     + ") ; " + Float.toHexString(c.value) + " " + c.value);
         }
 
         @Override
         public Void visitInteger(ConstantPool.CONSTANT_Integer_info c, Void p) {
-            return nl("(INT " + c.value + ")");
+            return nl("(integer " + c.value + ")");
         }
 
         @Override
         public Void visitInterfaceMethodref(ConstantPool.CONSTANT_InterfaceMethodref_info c, Void p) {
-            return nl("(interface-methodref)");
+            try {
+                String className = c.getClassName();
+                ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
+                String name = infoNameAndType.getName();
+                String desc = infoNameAndType.getType();
+
+                String[] ss = splitMethodDesc(desc);
+                int paramCount = ss.length - 1;
+                for (int i = 1; i < ss.length; i++) {
+                    if (ss[i].equals("D") || ss[i].equals("J")) {
+                        paramCount++;
+                    }
+                }
+                return nl("(interface-methodref \"" + className + "\" \"" + name + ":" + desc + "\" " + paramCount + ")");
+            } catch (ConstantPoolException e) {
+                return nl("\"" + e.getMessage() + "\"");
+            }
         }
 
         @Override
@@ -686,17 +565,39 @@ public class jvm2m5 implements
 
         @Override
         public Void visitLong(ConstantPool.CONSTANT_Long_info c, Void p) {
-            return nl("(LONG " + c.value + ")");
+            return nl("(long " + c.value + ")");
         }
 
         @Override
         public Void visitNameAndType(ConstantPool.CONSTANT_NameAndType_info c, Void p) {
-            return nl("(name-and-type)");
+            try {
+                String name = c.getName();
+                String desc = c.getType();
+                return nl("(name-and-type \"" + name + ":" + desc + "\")");
+            } catch (ConstantPoolException e) {
+                return nl("\"" + e.getMessage() + "\"");
+            }
         }
 
         @Override
         public Void visitMethodref(ConstantPool.CONSTANT_Methodref_info c, Void p) {
-            return nl("(methodref)");
+            try {
+                String className = c.getClassName();
+                ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
+                String name = infoNameAndType.getName();
+                String desc = infoNameAndType.getType();
+
+                String[] ss = splitMethodDesc(desc);
+                int paramCount = ss.length - 1;
+                for (int i = 1; i < ss.length; i++) {
+                    if (ss[i].equals("D") || ss[i].equals("J")) {
+                        paramCount++;
+                    }
+                }
+                return nl("(methodref \"" + className + "\" \"" + name + ":" + desc + "\" " + paramCount + ")");
+            } catch (ConstantPoolException e) {
+                return nl("\"" + e.getMessage() + "\"");
+            }
         }
 
         @Override
@@ -713,7 +614,7 @@ public class jvm2m5 implements
         public Void visitString(ConstantPool.CONSTANT_String_info c, Void p) {
             try {
                 String value = c.getString();
-                nl("(STRING (REF -1) ; \"");
+                nl("(string (ref -1) ; \"");
                 appendString(sb, value);
                 sb.append("\"");
                 nl("  ");
