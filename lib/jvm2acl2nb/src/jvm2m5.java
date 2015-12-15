@@ -1,11 +1,20 @@
-// this program write to /var/local/hbl/....
-// java jvm2acl2 some/path/tablename <.class files> <directories>
-// it generate separate files for each .class file.
-// and a file call table-name-class-table with lisp forms that load all class.
-//
-// it also take an -a argument that tells it to ignore method-body
-//
 
+/**
+ * Convertor from JVM class files to JVM M5 model.
+ *
+ * @author George M. Porter
+ * @author J Strother Moore
+ * @author Hanbing Liu
+ * @author Dmitry Nadezhin
+ */
+// java jvm2m5 <output-dir> <.class files> <directories>
+// it generate separate files for each .class file.
+//
+// Example:
+// > cd models/jvm/m5
+// > javac -cp $JAVA_HOME/lib/tools.jar:. *.java
+// > java -cp $JAVA_HOME/lib/tools.jar:. jvm2m5 classes .
+//
 import com.sun.tools.classfile.AccessFlags;
 import com.sun.tools.classfile.Attribute;
 import com.sun.tools.classfile.ClassFile;
@@ -16,7 +25,6 @@ import com.sun.tools.classfile.Field;
 import com.sun.tools.classfile.Instruction;
 import com.sun.tools.classfile.LineNumberTable_attribute;
 import com.sun.tools.classfile.Method;
-import com.sun.tools.classfile.Opcode;
 import java.io.File;
 import java.io.FileWriter;
 import java.nio.file.Paths;
@@ -25,8 +33,8 @@ import java.util.Arrays;
 import java.util.List;
 
 public class jvm2m5 implements
-        Instruction.KindVisitor<StringBuilder, Void>,
-        ConstantPool.Visitor<String, Opcode> {
+        Instruction.KindVisitor<ConstantPool.CPInfo, Void>,
+        ConstantPool.Visitor<Void, Boolean> {
 
     private static final String usage
             = "Usage: jvm2m5 <output directory> <file names>* [<directory names>*]\n";
@@ -105,7 +113,6 @@ public class jvm2m5 implements
     final ClassFile cf;
     final ConstantPool cp;
     final StringBuilder sb = new StringBuilder();
-    final StringBuilder sb2 = new StringBuilder();
 
     jvm2m5(ClassFile cf) throws ConstantPoolException {
         this.cf = cf;
@@ -114,29 +121,14 @@ public class jvm2m5 implements
 
     int indent;
     int mark;
+    private static final int CP_TAB = 56;
+    private static final int CODE_TAB = 56;
 
     void indent(int delta) {
         indent += delta;
     }
 
     Void nl(String s) {
-        if (sb2.length() > 0) {
-            // round the line length to multiple of 8.
-            int pos = 56;
-            int sbl = sb.length();
-            while (pos <= sb.length() - mark) {
-                pos += 8;
-                if (pos > 1000) {
-                    pos = pos;
-                }
-            }
-            int bc = mark + pos - sb.length();
-            for (int j = 0; j < bc; j++) {
-                sb.append(" ");
-            }
-            sb.append(sb2);
-            sb2.setLength(0);
-        }
         sb.append('\n');
         for (int i = 0; i < indent; i++) {
             sb.append(' ');
@@ -144,6 +136,17 @@ public class jvm2m5 implements
         mark = sb.length();
         sb.append(s);
         return null;
+    }
+
+    void comment(int pos, int num) {
+        while (pos <= sb.length() - mark) {
+            pos += 8;
+        }
+        int bc = mark + pos - sb.length();
+        for (int j = 0; j < bc; j++) {
+            sb.append(' ');
+        }
+        sb.append("; ").append(num);
     }
 
     //at the first stage, I won't dealing with the correct output format
@@ -199,11 +202,10 @@ public class jvm2m5 implements
 
         nl(" '(nil");
         indent(3);
-        CPPrintM5 cpp = new CPPrintM5();
         int ind = 1;
         for (ConstantPool.CPInfo info : cp.entries()) {
-            info.accept(cpp, null);
-            sb2.append("; " + ind);
+            info.accept(this, true);
+            comment(CP_TAB, ind);
             ind += info.size();
             for (int i = 1; i < info.size(); i++) {
                 nl("nil");
@@ -249,10 +251,19 @@ public class jvm2m5 implements
                     nl("; " + "line_number #" + lnt.line_number_table[li].line_number);
                     li++;
                 }
-                nl("(");
-                instr.accept(this, null);
+                String mnem = instr.getMnemonic();
+                if (instr.getKind() == Instruction.Kind.WIDE_LOCAL
+                        || instr.getKind() == Instruction.Kind.WIDE_LOCAL_SHORT) {
+                    mnem = mnem.replace("_w", "");
+                }
+                nl('(' + mnem);
+                ConstantPool.CPInfo info = instr.accept(this, null);
                 sb.append(")");
-                sb2.insert(0, "; " + instr.getPC());
+                comment(CODE_TAB, instr.getPC());
+                if (info != null) {
+                    sb.append(' ');
+                    info.accept(this, false);
+                }
             }
         } else {
             if (method.access_flags.is(AccessFlags.ACC_NATIVE)) {
@@ -265,70 +276,57 @@ public class jvm2m5 implements
 
     // Instruction.KindVisitor<String, Void> methods
     @Override
-    public StringBuilder visitNoOperands(Instruction instr, Void p) {
-        return sb.append(instr.getMnemonic());
+    public ConstantPool.CPInfo visitNoOperands(Instruction instr, Void p) {
+        return null;
     }
 
     @Override
-    public StringBuilder visitArrayType(Instruction instr, Instruction.TypeKind tk, Void p) {
-        return sb.append(instr.getMnemonic())
-                .append(" T_")
-                .append(tk.name.toUpperCase());
+    public ConstantPool.CPInfo visitArrayType(Instruction instr, Instruction.TypeKind tk, Void p) {
+        sb.append(" T_").append(tk.name.toUpperCase());
+        return null;
     }
 
     @Override
-    public StringBuilder visitBranch(Instruction instr, int offset, Void p) {
-        return sb.append(instr.getMnemonic())
-                .append(' ')
-                .append(offset);
+    public ConstantPool.CPInfo visitBranch(Instruction instr, int offset, Void p) {
+        sb.append(' ').append(offset);
+        return null;
     }
 
     @Override
-    public StringBuilder visitConstantPoolRef(Instruction instr, int index, Void p) {
-        sb.append(instr.getMnemonic());
+    public ConstantPool.CPInfo visitConstantPoolRef(Instruction instr, int index, Void p) {
         try {
-            ConstantPool.CPInfo info = cp.get(index);
-            sb2.append(" ");
-            String cpref = info.accept(this, instr.getOpcode());
-            return sb.append(cpref != null ? cpref : " " + index);
+            sb.append(' ').append(index);
+            return cp.get(index);
         } catch (ConstantPoolException e) {
-            throw new AssertionError(e);
+            throw new RuntimeException(e);
         }
     }
 
     @Override
-    public StringBuilder visitConstantPoolRefAndValue(Instruction instr, int index, int value, Void p) {
-        sb.append(instr.getMnemonic());
+    public ConstantPool.CPInfo visitConstantPoolRefAndValue(Instruction instr, int index, int value, Void p) {
         try {
-            ConstantPool.CPInfo info = cp.get(index);
-            sb2.append(" ");
-            String cpref = info.accept(this, instr.getOpcode());
-            return sb.append(cpref != null ? cpref : " " + index).append(' ').append(value);
+            sb.append(' ').append(index).append(' ').append(value);
+            return cp.get(index);
         } catch (ConstantPoolException e) {
-            throw new AssertionError(e);
+            throw new RuntimeException(e);
         }
     }
 
     @Override
-    public StringBuilder visitLocal(Instruction instr, int index, Void p) {
-        return sb.append(instr.getMnemonic()/*.replace("_w", "")*/)
-                .append(' ')
-                .append(index);
+    public ConstantPool.CPInfo visitLocal(Instruction instr, int index, Void p) {
+        sb.append(' ').append(index);
+        return null;
     }
 
     @Override
-    public StringBuilder visitLocalAndValue(Instruction instr, int index, int value, Void p) {
-        return sb.append(instr.getMnemonic().replace("_w", ""))
-                .append(' ')
-                .append(index)
-                .append(' ')
-                .append(value);
+    public ConstantPool.CPInfo visitLocalAndValue(Instruction instr, int index, int value, Void p) {
+        sb.append(' ').append(index).append(' ').append(value);
+        return null;
     }
 
     @Override
-    public StringBuilder visitLookupSwitch(Instruction instr, int default_, int npairs, int[] matches, int[] offsets, Void p) {
-        sb.append(instr.getMnemonic()) // the opcode
-                .append(" (lookupswitchinfo ")
+    public ConstantPool.CPInfo visitLookupSwitch(Instruction instr, int default_, int npairs, int[] matches, int[] offsets, Void p) {
+        sb.append(" (lookupswitchinfo ")
                 .append(default_) // the default target
                 .append(' ')
                 .append(npairs) // the pair count
@@ -341,13 +339,13 @@ public class jvm2m5 implements
                     .append(") ");
         }
         sb.setCharAt(sb.length() - 1, ')');
-        return sb.append(")");
+        sb.append(")");
+        return null;
     }
 
     @Override
-    public StringBuilder visitTableSwitch(Instruction instr, int default_, int low, int high, int[] offsets, Void p) {
-        sb.append(instr.getMnemonic()) // the opcode
-                .append(" (tableswitchinfo ")
+    public ConstantPool.CPInfo visitTableSwitch(Instruction instr, int default_, int low, int high, int[] offsets, Void p) {
+        sb.append(" (tableswitchinfo ")
                 .append(default_) // the default target
                 .append(" (")
                 .append(low)
@@ -359,192 +357,96 @@ public class jvm2m5 implements
                     .append(' ');
         }
         sb.setCharAt(sb.length() - 1, ')');
-        return sb.append(")");
+        sb.append(")");
+        return null;
     }
 
     @Override
-    public StringBuilder visitValue(Instruction instr, int value, Void p) {
-        return sb.append(instr.getMnemonic())
-                .append(' ')
-                .append(value);
+    public ConstantPool.CPInfo visitValue(Instruction instr, int value, Void p) {
+        sb.append(' ').append(value);
+        return null;
     }
 
     @Override
-    public StringBuilder visitUnknown(Instruction instr, Void p) {
-        return sb.append("bytecode ")
-                .append(instr.getOpcode());
+    public ConstantPool.CPInfo visitUnknown(Instruction instr, Void p) {
+        sb.append(' ').append(instr.getOpcode());
+        return null;
     }
 
-    // ConstantPool.Visitor<Void, Opcode> methods
+    // ConstantPool.Visitor<String, Boolean> methods
     @Override
-    public String visitClass(ConstantPool.CONSTANT_Class_info c, Opcode op) {
+    public Void visitClass(ConstantPool.CONSTANT_Class_info c, Boolean inConstantPool) {
         try {
             String name = c.getName();
-            sb2.append("class " + name.replace('/', '.'));
-            return null;
-        } catch (ConstantPoolException e) {
-            return e.getMessage();
-        }
-    }
-
-    @Override
-    public String visitDouble(ConstantPool.CONSTANT_Double_info c, Opcode op) {
-        sb2.append(c.value).append("d");
-        return null;
-    }
-
-    @Override
-    public String visitFieldref(ConstantPool.CONSTANT_Fieldref_info c, Opcode op) {
-        try {
-            String className = c.getClassName();
-            ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
-            String name = infoNameAndType.getName();
-            String desc = infoNameAndType.getType();
-            sb2.append(className.replace('/', '.') + "." + name + ":" + desc);
-            return null;
-//            return " \"" + className + "\" \"" + name + ":" + desc + "\"";
-        } catch (ConstantPoolException e) {
-            return e.getMessage();
-        }
-    }
-
-    @Override
-    public String visitFloat(ConstantPool.CONSTANT_Float_info c, Opcode op) {
-        sb2.append(c.value).append("f");
-        return null;
-    }
-
-    @Override
-    public String visitInteger(ConstantPool.CONSTANT_Integer_info c, Opcode op) {
-        sb2.append(c.value);
-        return null;
-    }
-
-    @Override
-    public String visitInterfaceMethodref(ConstantPool.CONSTANT_InterfaceMethodref_info c, Opcode op) {
-        try {
-            String className = c.getClassName();
-            ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
-            String name = infoNameAndType.getName();
-            String desc = infoNameAndType.getType();
-            sb2.append(className.replace('/', '.') + "." + name + ":" + desc);
-            return null;
-        } catch (ConstantPoolException e) {
-            return e.getMessage();
-        }
-    }
-
-    @Override
-    public String visitInvokeDynamic(ConstantPool.CONSTANT_InvokeDynamic_info c, Opcode op) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public String visitLong(ConstantPool.CONSTANT_Long_info c, Opcode op) {
-        sb2.append(c.value).append("f");
-        return null;
-    }
-
-    @Override
-    public String visitNameAndType(ConstantPool.CONSTANT_NameAndType_info c, Opcode op) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public String visitMethodref(ConstantPool.CONSTANT_Methodref_info c, Opcode op) {
-        try {
-            String className = c.getClassName();
-            ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
-            String name = infoNameAndType.getName();
-            String desc = infoNameAndType.getType();
-            sb2.append(className.replace('/', '.') + "." + name + ":" + desc);
-            return null;
-        } catch (ConstantPoolException e) {
-            return e.getMessage();
-        }
-    }
-
-    @Override
-    public String visitMethodHandle(ConstantPool.CONSTANT_MethodHandle_info c, Opcode op) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public String visitMethodType(ConstantPool.CONSTANT_MethodType_info c, Opcode op) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public String visitString(ConstantPool.CONSTANT_String_info c, Opcode op) {
-        try {
-            String value = c.getString();
-            sb2.append("\"");
-            appendString(sb2, value);
-            sb2.append("\"");
-            return null;
-        } catch (ConstantPoolException e) {
-            return e.getMessage();
-        }
-    }
-
-    @Override
-    public String visitUtf8(ConstantPool.CONSTANT_Utf8_info cnstnt, Opcode op) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    class CPPrintM5 implements ConstantPool.Visitor<Void, Void> {
-
-        @Override
-        public Void visitClass(ConstantPool.CONSTANT_Class_info c, Void p) {
-            try {
+            if (inConstantPool) {
                 return nl("(class (ref -1) \"" + c.getName() + "\")");
-            } catch (ConstantPoolException e) {
-                return nl(e.getMessage());
             }
+            sb.append("class " + name.replace('/', '.'));
+            return null;
+        } catch (ConstantPoolException e) {
+            throw new RuntimeException(e);
         }
+    }
 
-        @Override
-        public Void visitDouble(ConstantPool.CONSTANT_Double_info c, Void p) {
+    @Override
+    public Void visitDouble(ConstantPool.CONSTANT_Double_info c, Boolean inConstantPool) {
+        if (inConstantPool) {
             return nl("(double #x"
                     + padLeft(Long.toHexString(Double.doubleToRawLongBits(c.value)), 16)
                     + ") ; " + Double.toHexString(c.value) + " " + c.value);
         }
+        sb.append(c.value).append("d");
+        return null;
+    }
 
-        @Override
-        public Void visitFieldref(ConstantPool.CONSTANT_Fieldref_info c, Void p) {
-            try {
-                String className = c.getClassName();
-                ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
-                String name = infoNameAndType.getName();
-                String desc = infoNameAndType.getType();
-
+    @Override
+    public Void visitFieldref(ConstantPool.CONSTANT_Fieldref_info c, Boolean inConstantPool) {
+        try {
+            String className = c.getClassName();
+            ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
+            String name = infoNameAndType.getName();
+            String desc = infoNameAndType.getType();
+            if (inConstantPool) {
                 int size = desc.equals("D") || desc.equals("J") ? 2 : 1;
                 return nl("(fieldref \"" + className + "\" \"" + name + ":" + desc + "\" " + size + ")");
-            } catch (ConstantPoolException e) {
-                return nl("\"" + e.getMessage() + "\"");
-            }
-        }
 
-        @Override
-        public Void visitFloat(ConstantPool.CONSTANT_Float_info c, Void p) {
+            }
+            sb.append(className.replace('/', '.') + "." + name + ":" + desc);
+            return null;
+//            return " \"" + className + "\" \"" + name + ":" + desc + "\"";
+        } catch (ConstantPoolException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public Void visitFloat(ConstantPool.CONSTANT_Float_info c, Boolean inConstantPool) {
+        if (inConstantPool) {
             return nl("(float #x"
                     + padLeft(Integer.toHexString(Float.floatToRawIntBits(c.value)), 8)
                     + ") ; " + Float.toHexString(c.value) + " " + c.value);
         }
+        sb.append(c.value).append("f");
+        return null;
+    }
 
-        @Override
-        public Void visitInteger(ConstantPool.CONSTANT_Integer_info c, Void p) {
+    @Override
+    public Void visitInteger(ConstantPool.CONSTANT_Integer_info c, Boolean inConstantPool) {
+        if (inConstantPool) {
             return nl("(integer " + c.value + ")");
         }
+        sb.append(c.value);
+        return null;
+    }
 
-        @Override
-        public Void visitInterfaceMethodref(ConstantPool.CONSTANT_InterfaceMethodref_info c, Void p) {
-            try {
-                String className = c.getClassName();
-                ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
-                String name = infoNameAndType.getName();
-                String desc = infoNameAndType.getType();
-
+    @Override
+    public Void visitInterfaceMethodref(ConstantPool.CONSTANT_InterfaceMethodref_info c, Boolean inConstantPool) {
+        try {
+            String className = c.getClassName();
+            ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
+            String name = infoNameAndType.getName();
+            String desc = infoNameAndType.getType();
+            if (inConstantPool) {
                 String[] ss = splitMethodDesc(desc);
                 int paramCount = ss.length - 1;
                 for (int i = 1; i < ss.length; i++) {
@@ -553,23 +455,34 @@ public class jvm2m5 implements
                     }
                 }
                 return nl("(interface-methodref \"" + className + "\" \"" + name + ":" + desc + "\" " + paramCount + ")");
-            } catch (ConstantPoolException e) {
-                return nl("\"" + e.getMessage() + "\"");
             }
+            sb.append(className.replace('/', '.') + "." + name + ":" + desc);
+            return null;
+        } catch (ConstantPoolException e) {
+            throw new RuntimeException(e);
         }
+    }
 
-        @Override
-        public Void visitInvokeDynamic(ConstantPool.CONSTANT_InvokeDynamic_info c, Void p) {
+    @Override
+    public Void visitInvokeDynamic(ConstantPool.CONSTANT_InvokeDynamic_info c, Boolean inConstantPool) {
+        if (inConstantPool) {
             return nl("(invoke-dynamic)");
         }
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
 
-        @Override
-        public Void visitLong(ConstantPool.CONSTANT_Long_info c, Void p) {
+    @Override
+    public Void visitLong(ConstantPool.CONSTANT_Long_info c, Boolean inConstantPool) {
+        if (inConstantPool) {
             return nl("(long " + c.value + ")");
         }
+        sb.append(c.value).append("f");
+        return null;
+    }
 
-        @Override
-        public Void visitNameAndType(ConstantPool.CONSTANT_NameAndType_info c, Void p) {
+    @Override
+    public Void visitNameAndType(ConstantPool.CONSTANT_NameAndType_info c, Boolean inConstantPool) {
+        if (inConstantPool) {
             try {
                 String name = c.getName();
                 String desc = c.getType();
@@ -578,15 +491,17 @@ public class jvm2m5 implements
                 return nl("\"" + e.getMessage() + "\"");
             }
         }
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
 
-        @Override
-        public Void visitMethodref(ConstantPool.CONSTANT_Methodref_info c, Void p) {
-            try {
-                String className = c.getClassName();
-                ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
-                String name = infoNameAndType.getName();
-                String desc = infoNameAndType.getType();
-
+    @Override
+    public Void visitMethodref(ConstantPool.CONSTANT_Methodref_info c, Boolean inConstantPool) {
+        try {
+            String className = c.getClassName();
+            ConstantPool.CONSTANT_NameAndType_info infoNameAndType = c.getNameAndTypeInfo();
+            String name = infoNameAndType.getName();
+            String desc = infoNameAndType.getType();
+            if (inConstantPool) {
                 String[] ss = splitMethodDesc(desc);
                 int paramCount = ss.length - 1;
                 for (int i = 1; i < ss.length; i++) {
@@ -595,25 +510,35 @@ public class jvm2m5 implements
                     }
                 }
                 return nl("(methodref \"" + className + "\" \"" + name + ":" + desc + "\" " + paramCount + ")");
-            } catch (ConstantPoolException e) {
-                return nl("\"" + e.getMessage() + "\"");
             }
+            sb.append(className.replace('/', '.') + "." + name + ":" + desc);
+            return null;
+        } catch (ConstantPoolException e) {
+            throw new RuntimeException(e);
         }
+    }
 
-        @Override
-        public Void visitMethodHandle(ConstantPool.CONSTANT_MethodHandle_info c, Void p) {
+    @Override
+    public Void visitMethodHandle(ConstantPool.CONSTANT_MethodHandle_info c, Boolean inConstantPool) {
+        if (inConstantPool) {
             return nl("(method-handle)");
         }
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
 
-        @Override
-        public Void visitMethodType(ConstantPool.CONSTANT_MethodType_info c, Void p) {
+    @Override
+    public Void visitMethodType(ConstantPool.CONSTANT_MethodType_info c, Boolean inConstantPool) {
+        if (inConstantPool) {
             return nl("(method-type)");
         }
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
 
-        @Override
-        public Void visitString(ConstantPool.CONSTANT_String_info c, Void p) {
-            try {
-                String value = c.getString();
+    @Override
+    public Void visitString(ConstantPool.CONSTANT_String_info c, Boolean inConstantPool) {
+        try {
+            String value = c.getString();
+            if (inConstantPool) {
                 nl("(string (ref -1) ; \"");
                 appendString(sb, value);
                 sb.append("\"");
@@ -623,15 +548,22 @@ public class jvm2m5 implements
                 }
                 sb.append(")");
                 return null;
-            } catch (ConstantPoolException e) {
-                return nl(e.getMessage());
             }
+            sb.append("\"");
+            appendString(sb, value);
+            sb.append("\"");
+            return null;
+        } catch (ConstantPoolException e) {
+            throw new RuntimeException(e);
         }
+    }
 
-        @Override
-        public Void visitUtf8(ConstantPool.CONSTANT_Utf8_info cnstnt, Void p) {
+    @Override
+    public Void visitUtf8(ConstantPool.CONSTANT_Utf8_info cnstnt, Boolean inConstantPool) {
+        if (inConstantPool) {
             return nl("(utf8)");
         }
+        throw new UnsupportedOperationException("Not supported yet.");
     }
 
     private static String[] splitMethodDesc(String desc) {
