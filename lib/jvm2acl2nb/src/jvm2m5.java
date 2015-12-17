@@ -1,6 +1,6 @@
 
 /**
- * Convertor from JVM class files to JVM M5 model.
+ * Converter from JVM class files to JVM M5 model.
  *
  * @author George M. Porter
  * @author J Strother Moore
@@ -8,7 +8,7 @@
  * @author Dmitry Nadezhin
  */
 // java jvm2m5 <output-dir> <.class files> <directories>
-// it generate separate files for each .class file.
+// it generates separate files for each .class file.
 //
 // Example:
 // > cd models/jvm/m5
@@ -251,12 +251,7 @@ public class jvm2m5 implements
                     nl("; " + "line_number #" + lnt.line_number_table[li].line_number);
                     li++;
                 }
-                String mnem = instr.getMnemonic();
-                if (instr.getKind() == Instruction.Kind.WIDE_LOCAL
-                        || instr.getKind() == Instruction.Kind.WIDE_LOCAL_SHORT) {
-                    mnem = mnem.replace("_w", "");
-                }
-                nl('(' + mnem);
+                nl('(' + instr.getMnemonic());
                 ConstantPool.CPInfo info = instr.accept(this, null);
                 sb.append(")");
                 comment(CODE_TAB, instr.getPC());
