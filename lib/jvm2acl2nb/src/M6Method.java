@@ -640,7 +640,7 @@ public class M6Method {
         @Override
         public String visitLocal(Instruction instr, int index, Void p) {
             StringBuilder sb = new StringBuilder();
-            return sb.append(instr.getMnemonic()/*.replace("_w", "")*/)
+            return sb.append(instr.getMnemonic())
                     .append(' ')
                     .append(index)
                     .toString();
@@ -649,7 +649,7 @@ public class M6Method {
         @Override
         public String visitLocalAndValue(Instruction instr, int index, int value, Void p) {
             StringBuilder sb = new StringBuilder();
-            return sb.append(instr.getMnemonic().replace("_w", ""))
+            return sb.append(instr.getMnemonic())
                     .append(' ')
                     .append(index)
                     .append(' ')
